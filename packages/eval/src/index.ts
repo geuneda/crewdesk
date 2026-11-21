@@ -14,7 +14,7 @@ export type EvalAgent = (
   question: Question,
   knowledge: EvalKnowledge,
   model: string,
-) => Promise<{ actions: ExecutedAction[] }>
+) => Promise<{ actions: ExecutedAction[]; result?: JsonObject }>
 
 export type EvalOptions = {
   questions: Question[]

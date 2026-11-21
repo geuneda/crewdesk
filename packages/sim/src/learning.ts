@@ -4,7 +4,7 @@ import type { JsonObject, StorePort } from '@crewdesk/core'
 import { type Question, runEval } from '@crewdesk/eval'
 import { type KnowledgeBase, patchEntry } from '@crewdesk/knowledge'
 import type { MemorySystems } from './dummies/systems.ts'
-import { createScriptedEvalAgent } from './evalAgent.ts'
+import { createEvalAgent } from './evalAgent.ts'
 import { paramSources } from './workload.ts'
 
 export type LearningDeps = Pick<BatchDeps, 'clock' | 'recordUsage' | 'model' | 'onError'> & {
@@ -57,7 +57,12 @@ export const createLearning = (deps: LearningDeps) =>
       const report = await runEval({
         questions: change ? followChange(deps.kb(), deps.questions(), change) : deps.questions(),
         kb: candidate,
-        agent: createScriptedEvalAgent(candidate, deps.systems.snapshot(), deps.clock, deps.recordUsage),
+        agent: createEvalAgent({
+          kb: candidate,
+          db: deps.systems.snapshot(),
+          clock: deps.clock,
+          recordUsage: deps.recordUsage,
+        }),
         cache: deps.store,
         promptVersion: 'sim',
         model: deps.model,

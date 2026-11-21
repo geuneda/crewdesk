@@ -1,0 +1,15 @@
+{
+  "name": "@crewdesk/runtime-claude",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.329",
+    "@crewdesk/core": "workspace:*",
+    "@crewdesk/knowledge": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

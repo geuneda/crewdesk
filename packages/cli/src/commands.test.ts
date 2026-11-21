@@ -5,7 +5,8 @@ import { applyOverlay, loadDistro, parseOverlay, planUpgrade, snapshotOf } from 
 import { patchEntry } from '@crewdesk/knowledge'
 import { baseDistroDir } from '@crewdesk/sim'
 import { expect, test } from 'vitest'
-import { deploy, evaluate, init, upgrade } from './commands.ts'
+import { deploy, evaluate, init, sim, upgrade } from './commands.ts'
+import { readRecordings, record } from './record.ts'
 import { checkUpgrade, demoNextBase, renderUpgradeReport } from './upgradeReport.ts'
 
 const base = await loadDistro(baseDistroDir)
@@ -128,3 +129,52 @@ test('eval reports each question and reuses a cache file', async () => {
   expect(first.lines).toContain('pass  q.deploy.prod')
   expect((await evaluate({ base: baseDistroDir, cache })).lines).toContain('pass  q.deploy.prod  (cached)')
 })
+
+test('record refuses to bill without confirmation, then records and reports with a stand-in agent', async () => {
+  const out = await temp()
+  const refused = await record({ base: baseDistroDir, out, runs: 1, model: 'medium', confirmCost: false })
+  expect(refused.code).toBe(1)
+  expect(refused.lines[0]).toMatch(/claude-sonnet-5-5 14 times .* and is billed/)
+
+  const prompts: string[] = []
+  const done = await record({
+    base: baseDistroDir,
+    out,
+    runs: 1,
+    model: 'medium',
+    confirmCost: true,
+    run: async function* ({ prompt, options }) {
+      prompts.push(`${String(options.systemPrompt)}\n${prompt}`)
+      yield {
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        result: '',
+        total_cost_usd: 0.001,
+        num_turns: 1,
+      } as never
+    },
+  })
+  expect(done.lines[0]).toBe('recorded 14 runs on claude-sonnet-5-5')
+  expect(prompts.filter((prompt) => prompt.includes('업무 지식: 없음'))).toHaveLength(7)
+  expect(prompts.every((prompt) => prompt.includes('role_codes(sys, cd)'))).toBe(true)
+  const file = await readRecordings(join(out, 'recordings.json'))
+  expect(file.recordings).toHaveLength(14)
+  expect(await readFile(join(out, 'report-1-knowledge.md'), 'utf8')).toContain(
+    '| 지식 있음 | 7 | 0% | 0.001 |',
+  )
+  await writeFile(join(out, 'broken.json'), '{"recordings":[{}]}')
+  await expect(readRecordings(join(out, 'broken.json'))).rejects.toThrow(/not a recordings file/)
+
+  const reports = await sim({
+    base: baseDistroDir,
+    overlays: overlaysDir,
+    out,
+    days: 2,
+    seed: 1,
+    recordings: join(out, 'recordings.json'),
+  })
+  expect(reports.code).toBe(0)
+  expect(await readFile(join(out, 'report-1-knowledge.md'), 'utf8')).toContain('녹화의 재생')
+  expect(await readFile(join(out, 'report-5-upgrade.md'), 'utf8')).toContain('| payments | 충돌로 중단 | 1 |')
+}, 60_000)

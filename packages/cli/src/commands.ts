@@ -15,13 +15,14 @@ import { renderWiki } from '@crewdesk/knowledge'
 import { routeModel } from '@crewdesk/ops'
 import {
   approvalCurve,
-  createScriptedEvalAgent,
+  createEvalAgent,
   createSqliteStore,
   defaultScenarioEvents,
   defaultSimConfig,
   renderApprovalReport,
   renderBreakEvenReport,
   renderCostReport,
+  renderKnowledgeReport,
   renderStalenessReport,
   runBreakEven,
   runCostComparison,
@@ -31,6 +32,7 @@ import {
   summarize,
 } from '@crewdesk/sim'
 import { parseDocument } from 'yaml'
+import { readRecordings, replayKnowledgeEffect } from './record.ts'
 import { checkUpgrade, demoNextBase, renderUpgradeReport } from './upgradeReport.ts'
 
 export type Outcome = { code: number; lines: string[] }
@@ -157,7 +159,7 @@ export const evaluate = async (options: { base: string; cache?: string }): Promi
   const report = await runEval({
     questions: distro.questions,
     kb: distro.kb,
-    agent: createScriptedEvalAgent(distro.kb),
+    agent: createEvalAgent({ kb: distro.kb }),
     cache: createSqliteStore(options.cache),
     promptVersion: distro.settings.promptVersion,
     model: routeModel(distro.settings.routes, 'eval'),
@@ -180,6 +182,7 @@ export const sim = async (options: {
   out: string
   days: number
   seed: number
+  recordings?: string
 }): Promise<Outcome> => {
   const distro = await loadDistro(options.base)
   const config = { ...defaultSimConfig, ...simSettingsFrom(distro), seed: options.seed, days: options.days }
@@ -199,7 +202,17 @@ export const sim = async (options: {
   )
   const next = demoNextBase(distro)
   const upgrades = await Promise.all(overlays.map((overlay) => checkUpgrade(distro, next, overlay)))
+  const recorded = options.recordings ? await readRecordings(options.recordings) : null
+  const knowledge = recorded ? await replayKnowledgeEffect(options.base, recorded) : null
   const reports = {
+    ...(recorded && knowledge
+      ? {
+          'report-1-knowledge.md': renderKnowledgeReport(
+            knowledge,
+            `${recorded.model}, 질문당 ${recorded.runs}회, ${recorded.recordedAt} 녹화의 재생. 시간은 녹화 때만 잰다`,
+          ),
+        }
+      : {}),
     'report-2-approval.md': renderApprovalReport(main.gates, main.approvals, main.ruleChanges),
     'report-3-staleness.md': renderStalenessReport(staleness),
     'report-4-cost.md': renderCostReport(cost),
@@ -209,6 +222,7 @@ export const sim = async (options: {
       seed: options.seed,
       days: options.days,
       summary: summarize(main),
+      knowledge,
       approval: approvalCurve(main.gates, main.approvals),
       staleness,
       cost,
@@ -222,7 +236,7 @@ export const sim = async (options: {
     code: 0,
     lines: [
       ...Object.keys(reports).map((name) => `wrote ${join(options.out, name)}`),
-      'report 1 (accuracy with and without knowledge) needs a real or replayed runtime',
+      ...(recorded ? [] : ['report 1 needs recordings of a real runtime: see the record command']),
     ],
   }
 }

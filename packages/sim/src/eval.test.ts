@@ -3,14 +3,14 @@ import { patchEntry } from '@crewdesk/knowledge'
 import { expect, test } from 'vitest'
 import { loadBaseKnowledge, loadBaseQuestions } from './company/base.ts'
 import { createSqliteStore } from './dummies/store.ts'
-import { createScriptedEvalAgent } from './evalAgent.ts'
+import { createEvalAgent } from './evalAgent.ts'
 
 const kb = await loadBaseKnowledge()
 const questions = await loadBaseQuestions()
 const optionsFor = (base: typeof kb) => ({
   questions,
   kb: base,
-  agent: createScriptedEvalAgent(base),
+  agent: createEvalAgent({ kb: base }),
   promptVersion: 'p1',
   model: 'medium',
 })

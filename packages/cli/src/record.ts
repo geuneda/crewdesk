@@ -1,0 +1,128 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { type RuntimeEvent, systemClock } from '@crewdesk/core'
+import { loadDistro } from '@crewdesk/distro'
+import { createReplayRuntime, type Recording, recordRuntime } from '@crewdesk/runtime'
+import { createClaudeRuntime, type RunAgent } from '@crewdesk/runtime-claude'
+import {
+  companyToolGuide,
+  conditionKey,
+  createEvalAgent,
+  fakePricing,
+  type KnowledgeEffectRow,
+  measureKnowledgeEffect,
+  renderKnowledgeReport,
+} from '@crewdesk/sim'
+
+export type RecordingFile = { model: string; runs: number; recordedAt: string; recordings: Recording[] }
+
+export const realModels: Record<string, string> = {
+  small: 'claude-haiku-5-5',
+  medium: 'claude-sonnet-5-5',
+  large: 'claude-opus-5-5',
+}
+
+export const record = async (options: {
+  base: string
+  out: string
+  runs: number
+  model: string
+  confirmCost: boolean
+  run?: RunAgent
+}): Promise<{ code: number; lines: string[] }> => {
+  const distro = await loadDistro(options.base)
+  const calls = distro.questions.length * 2 * options.runs
+  const model = realModels[options.model] ?? options.model
+  if (!options.confirmCost) {
+    return {
+      code: 1,
+      lines: [
+        `this runs ${model} ${calls} times (${distro.questions.length} questions x 2 conditions x ${options.runs} runs) and is billed`,
+        'run it again with --confirm-cost once the cost is approved',
+      ],
+    }
+  }
+  const systemPrompt = distro.prompts.work
+  if (!systemPrompt) throw new Error('the distro has no prompts/work.md')
+  let recordings: Recording[] = []
+  const runtime = recordRuntime(
+    createClaudeRuntime({
+      systemPrompt: `${systemPrompt}\n\n${companyToolGuide}`,
+      models: realModels,
+      ...(options.run ? { run: options.run } : {}),
+    }),
+    conditionKey,
+    (recording) => {
+      recordings = [...recordings, recording]
+    },
+  )
+  const rows = await measureKnowledgeEffect({
+    kb: distro.kb,
+    questions: distro.questions,
+    runs: options.runs,
+    model: options.model,
+    clock: systemClock,
+    pricing: {},
+    agentFor: (kb, recordUsage) => createEvalAgent({ kb, clock: systemClock, runtime, recordUsage }),
+  })
+  const file: RecordingFile = {
+    model,
+    runs: options.runs,
+    recordedAt: new Date(systemClock.now()).toISOString(),
+    recordings,
+  }
+  await mkdir(options.out, { recursive: true })
+  await writeFile(join(options.out, 'recordings.json'), `${JSON.stringify(file)}\n`)
+  await writeFile(
+    join(options.out, 'report-1-knowledge.md'),
+    renderKnowledgeReport(rows, `${model}, 질문당 ${options.runs}회, 실제 실행 ${file.recordedAt}`),
+  )
+  return {
+    code: 0,
+    lines: [
+      `recorded ${recordings.length} runs on ${model}`,
+      `wrote ${join(options.out, 'recordings.json')}`,
+      `wrote ${join(options.out, 'report-1-knowledge.md')}`,
+    ],
+  }
+}
+
+const isEvent = (value: unknown): value is RuntimeEvent =>
+  typeof value === 'object' && value !== null && typeof (value as { type?: unknown }).type === 'string'
+
+export const readRecordings = async (path: string): Promise<RecordingFile> => {
+  const raw: unknown = JSON.parse(await readFile(path, 'utf8'))
+  const file = raw as Partial<RecordingFile>
+  if (
+    typeof file !== 'object' ||
+    file === null ||
+    typeof file.model !== 'string' ||
+    typeof file.runs !== 'number' ||
+    typeof file.recordedAt !== 'string' ||
+    !Array.isArray(file.recordings) ||
+    !file.recordings.every(
+      (item) => typeof item?.key === 'string' && Array.isArray(item.events) && item.events.every(isEvent),
+    )
+  ) {
+    throw new Error(`${path} is not a recordings file`)
+  }
+  return file as RecordingFile
+}
+
+export const replayKnowledgeEffect = async (
+  base: string,
+  file: RecordingFile,
+): Promise<KnowledgeEffectRow[]> => {
+  const distro = await loadDistro(base)
+  const runtime = createReplayRuntime(file.recordings, conditionKey)
+  const still = { now: () => 0, sleep: async () => {} }
+  return measureKnowledgeEffect({
+    kb: distro.kb,
+    questions: distro.questions,
+    runs: file.runs,
+    model: file.model,
+    clock: still,
+    pricing: fakePricing,
+    agentFor: (kb, recordUsage) => createEvalAgent({ kb, clock: still, runtime, recordUsage }),
+  })
+}

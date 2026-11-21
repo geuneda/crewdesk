@@ -9,7 +9,7 @@ import {
 import { runEval } from '@crewdesk/eval'
 import { patchEntry } from '@crewdesk/knowledge'
 import { routeModel } from '@crewdesk/ops'
-import { createScriptedEvalAgent, createSqliteStore } from '@crewdesk/sim'
+import { createEvalAgent, createSqliteStore } from '@crewdesk/sim'
 
 export type UpgradeOutcome = {
   org: string
@@ -23,7 +23,7 @@ export const accuracyOf = async (distro: Distro): Promise<number> => {
   const report = await runEval({
     questions: distro.questions,
     kb: distro.kb,
-    agent: createScriptedEvalAgent(distro.kb),
+    agent: createEvalAgent({ kb: distro.kb }),
     cache: createSqliteStore(),
     promptVersion: distro.settings.promptVersion,
     model: routeModel(distro.settings.routes, 'eval'),

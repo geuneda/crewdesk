@@ -2,13 +2,15 @@
 import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 import { deploy, evaluate, init, type Outcome, sim, upgrade } from './commands.ts'
+import { record } from './record.ts'
 
 const usage = [
   'crewdesk init <dir> --org <name> [--base <dir>]',
   'crewdesk deploy <dir> [--base <dir>]',
   'crewdesk upgrade <dir> [--base <dir>]',
   'crewdesk eval [--base <dir>] [--cache <file>]',
-  'crewdesk sim [--out <dir>] [--days <n>] [--seed <n>] [--base <dir>] [--overlays <dir>]',
+  'crewdesk sim [--out <dir>] [--days <n>] [--seed <n>] [--base <dir>] [--overlays <dir>] [--recordings <file>]',
+  'crewdesk record [--out <dir>] [--runs <n>] [--model <small|medium|large>] --confirm-cost',
 ]
 
 const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url))
@@ -30,6 +32,10 @@ const run = async (): Promise<Outcome> => {
       days: { type: 'string', default: '30' },
       seed: { type: 'string', default: '1' },
       cache: { type: 'string' },
+      recordings: { type: 'string' },
+      runs: { type: 'string', default: '3' },
+      model: { type: 'string', default: 'medium' },
+      'confirm-cost': { type: 'boolean', default: false },
     },
   })
   const [command, dir] = positionals
@@ -45,6 +51,16 @@ const run = async (): Promise<Outcome> => {
       out: values.out,
       days: whole(values.days, 'days'),
       seed: whole(values.seed, 'seed'),
+      ...(values.recordings ? { recordings: values.recordings } : {}),
+    })
+  }
+  if (command === 'record') {
+    return record({
+      base,
+      out: values.out,
+      runs: whole(values.runs, 'runs'),
+      model: values.model,
+      confirmCost: values['confirm-cost'],
     })
   }
   return { code: 2, lines: ['usage:', ...usage.map((line) => `  ${line}`)] }
