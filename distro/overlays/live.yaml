@@ -1,0 +1,6 @@
+org: live
+baseVersion: 1.0.0
+settings:
+  staleAfterDays: 7
+knowledge:
+  actionType.incident.open: { promoteAfter: 2 }

@@ -1,0 +1,21 @@
+{
+  "name": "@crewdesk/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "crewdesk": "./src/main.ts"
+  },
+  "exports": {
+    ".": "./src/commands.ts"
+  },
+  "dependencies": {
+    "@crewdesk/core": "workspace:*",
+    "@crewdesk/distro": "workspace:*",
+    "@crewdesk/eval": "workspace:*",
+    "@crewdesk/knowledge": "workspace:*",
+    "@crewdesk/ops": "workspace:*",
+    "@crewdesk/sim": "workspace:*",
+    "yaml": "^2.9.1"
+  }
+}

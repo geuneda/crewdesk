@@ -1,11 +1,12 @@
-import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { parseQuestions, type Question } from '@crewdesk/eval'
-import { type KnowledgeBase, loadKnowledge } from '@crewdesk/knowledge'
+import { loadDistro } from '@crewdesk/distro'
+import type { Question } from '@crewdesk/eval'
+import type { KnowledgeBase } from '@crewdesk/knowledge'
 
 export const baseDistroDir = fileURLToPath(new URL('../../../../distro/base', import.meta.url))
 
-export const loadBaseKnowledge = (): Promise<KnowledgeBase> => loadKnowledge(`${baseDistroDir}/knowledge`)
+export const baseDistro = await loadDistro(baseDistroDir)
 
-export const loadBaseQuestions = async (): Promise<Question[]> =>
-  parseQuestions(await readFile(`${baseDistroDir}/eval/questions.yaml`, 'utf8'))
+export const loadBaseKnowledge = async (): Promise<KnowledgeBase> => baseDistro.kb
+
+export const loadBaseQuestions = async (): Promise<Question[]> => baseDistro.questions

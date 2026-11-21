@@ -4,7 +4,7 @@ A framework for running AI agents as team members: intake, shared work knowledge
 
 메일과 메신저로 업무를 받아 처리하는 AI 에이전트 사원을 조직에 배치하고 운영하기 위한 프레임워크입니다.
 
-상태: 설계 단계입니다. 구현은 아직 없습니다.
+상태: 시뮬레이션 구현이 동작합니다. 모든 외부 의존은 더미 구현입니다. 실제 런타임과 채널 연동은 아직 없습니다.
 
 ## 풀려는 문제
 
@@ -32,6 +32,23 @@ A framework for running AI agents as team members: intake, shared work knowledge
 3. 꼭 지켜야 하는 규칙은 글이 아니라 검사로 둡니다.
 4. 지식의 효과는 정답률과 비용으로 잽니다.
 5. 사람의 승인은 줄여야 할 비용으로 보고 기록합니다.
+
+## 실행
+
+Node.js 22.18 이상과 pnpm이 필요합니다.
+
+```sh
+pnpm install
+pnpm check
+pnpm crewdesk eval
+pnpm crewdesk sim --out reports
+```
+
+- `eval`: 기본 배포판의 지식으로 역량 질문을 실행합니다.
+- `sim`: 가상 회사에서 30일을 시뮬레이션하고 보고서를 `reports/`에 씁니다.
+- `init`, `deploy`, `upgrade`: 조직별 덮어쓰기로 배포판을 배치하고 올립니다.
+
+시뮬레이션의 비용과 한도는 가짜 값입니다. 절대값이 아니라 구성 사이의 차이를 봅니다.
 
 ## 기술
 

@@ -1,0 +1,6 @@
+org: payments
+baseVersion: 1.0.0
+settings:
+  budget: { turns: 8 }
+knowledge:
+  actionType.iam.grant: { promoteAfter: 10 }

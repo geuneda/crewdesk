@@ -11,7 +11,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "check": "pnpm lint && pnpm typecheck && pnpm test"
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "crewdesk": "node --disable-warning=ExperimentalWarning packages/cli/src/main.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.8",

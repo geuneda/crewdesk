@@ -1,5 +1,5 @@
 import type { Stage, UsageRecord } from '@crewdesk/core'
-import { defaultRoutes, flatRoutes, meteredSeats } from '../company/ops.ts'
+import { asMetered, flatRoutes } from '../company/ops.ts'
 import { runSimulation, type SimConfig, type SimResult } from '../engine.ts'
 
 const round = (value: number, digits = 4) => Number(value.toFixed(digits))
@@ -22,21 +22,21 @@ export type CostStep = {
 }
 
 export const runCostComparison = async (base: SimConfig): Promise<CostStep[]> => {
-  const metered = { ...base, seats: meteredSeats }
+  const metered = { ...base, seats: asMetered(base.seats) }
   const plain = { ...base.tokens, caching: false, codeMode: false }
   const variants: { name: string; config: SimConfig }[] = [
     {
       name: '기준: 모든 단계 최상위 모델, 캐싱 없음, 도구 결과 누적',
       config: { ...metered, routes: flatRoutes('large'), intakeStrongModel: 'large', tokens: plain },
     },
-    { name: '+ 단계·위험도별 모델 라우팅', config: { ...metered, routes: defaultRoutes, tokens: plain } },
+    { name: '+ 단계·위험도별 모델 라우팅', config: { ...metered, tokens: plain } },
     {
       name: '+ 프롬프트 캐싱',
-      config: { ...metered, routes: defaultRoutes, tokens: { ...plain, caching: true } },
+      config: { ...metered, tokens: { ...plain, caching: true } },
     },
     {
       name: '+ Code Mode 방식 도구',
-      config: { ...metered, routes: defaultRoutes, tokens: { ...plain, caching: true, codeMode: true } },
+      config: { ...metered, tokens: { ...plain, caching: true, codeMode: true } },
     },
   ]
   return Promise.all(
@@ -97,7 +97,7 @@ export const runBreakEven = async (
   return Promise.all(
     volumes.map(async (requestsPerDay) => {
       const [metered, seated] = await Promise.all([
-        runSimulation({ ...base, requestsPerDay, seats: meteredSeats }),
+        runSimulation({ ...base, requestsPerDay, seats: asMetered(base.seats) }),
         runSimulation({ ...base, requestsPerDay }),
       ])
       const meteredUsd = usd(metered.usage)

@@ -1,0 +1,15 @@
+{
+  "name": "@crewdesk/distro",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@crewdesk/core": "workspace:*",
+    "@crewdesk/eval": "workspace:*",
+    "@crewdesk/knowledge": "workspace:*",
+    "yaml": "^2.9.1"
+  }
+}

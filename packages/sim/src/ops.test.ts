@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest'
 import { loadBaseKnowledge } from './company/base.ts'
-import { quotaSeats } from './company/ops.ts'
+import { withWindows } from './company/ops.ts'
 import { defaultSimConfig, runSimulation, type SimConfig } from './engine.ts'
 import { renderBreakEvenReport, renderCostReport, runBreakEven, runCostComparison } from './reports/cost.ts'
 import { DAY, HOUR } from './time.ts'
@@ -18,7 +18,7 @@ test('when a seat runs out, urgent work overflows to metered and the rest waits 
     ...config,
     days: 1,
     requestsPerDay: 200,
-    seats: quotaSeats([{ lengthMs: 12 * HOUR, limit: 2_000_000 }]),
+    seats: withWindows(config.seats, [{ lengthMs: 12 * HOUR, limit: 2_000_000 }]),
     events: [drain],
   })
   const incidents = result.tasks.filter((task) => task.domain === 'incident')

@@ -1,0 +1,31 @@
+name: crewdesk-base
+version: 1.0.0
+settings:
+  promptVersion: p1
+  routes:
+    - { stage: intake, model: small }
+    - { stage: close, model: small }
+    - { stage: work, risk: high, model: large }
+    - { stage: work, model: medium }
+    - { stage: batch, model: medium }
+    - { stage: eval, model: medium }
+  intakeStrongModel: medium
+  budget: { tokens: 200000, turns: 12, subagents: 0 }
+  seats:
+    - { id: seat-intake, agent: intake, kind: metered }
+    - { id: seat-overflow, agent: overflow, kind: metered }
+    - id: seat-access
+      agent: agent-access
+      kind: quota
+      windows: [{ lengthMs: 18000000, limit: 2000000 }, { lengthMs: 604800000, limit: 12000000 }]
+    - id: seat-deploy
+      agent: agent-deploy
+      kind: quota
+      windows: [{ lengthMs: 18000000, limit: 2000000 }, { lengthMs: 604800000, limit: 12000000 }]
+    - id: seat-incident
+      agent: agent-incident
+      kind: quota
+      windows: [{ lengthMs: 18000000, limit: 2000000 }, { lengthMs: 604800000, limit: 12000000 }]
+  tools: { codeMode: true, caching: true }
+  batchEveryHours: 24
+  staleAfterDays: 14

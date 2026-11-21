@@ -1,6 +1,7 @@
 import { type ApprovalRule, createApprovalDesk } from '@crewdesk/approval'
 import type {
   ApprovalRecord,
+  Budget,
   DiscrepancyReport,
   Domain,
   DomainAction,
@@ -11,6 +12,7 @@ import type {
   UsageRecord,
   UsageReport,
 } from '@crewdesk/core'
+import type { Distro } from '@crewdesk/distro'
 import type { Question } from '@crewdesk/eval'
 import {
   actionTypesOf,
@@ -23,8 +25,9 @@ import {
 import { createLedger, type Pricing, placeTask, type Route, routeModel } from '@crewdesk/ops'
 import { type ApproverPolicy, createVirtualApprovers } from './approver.ts'
 import { companyActions } from './company/actions.ts'
+import { baseDistro } from './company/base.ts'
 import { buildCompanyDb, people } from './company/data.ts'
-import { defaultRoutes, defaultSeats, fakePricing } from './company/ops.ts'
+import { fakePricing } from './company/ops.ts'
 import { companyScript } from './company/scripts.ts'
 import { createDesk } from './desk.ts'
 import { createMemoryChannel } from './dummies/channel.ts'
@@ -37,7 +40,7 @@ import { createSqliteStore } from './dummies/store.ts'
 import { createMemorySystems, type Db } from './dummies/systems.ts'
 import { applyEvent, failureRateAt, type SimEvent } from './events.ts'
 import { createLearning } from './learning.ts'
-import { DAY, MINUTE } from './time.ts'
+import { DAY, HOUR, MINUTE } from './time.ts'
 import { generateWorkload } from './workload.ts'
 
 export type SimConfig = {
@@ -59,6 +62,7 @@ export type SimConfig = {
   pricing: Pricing
   routes: Route[]
   intakeStrongModel: string
+  budget: Budget
 }
 
 export type SimResult = {
@@ -82,7 +86,20 @@ export type SimResult = {
   db: Db
 }
 
-export const defaultSimConfig = {
+export const simSettingsFrom = (distro: Distro) => ({
+  kb: distro.kb,
+  questions: distro.questions,
+  routes: distro.settings.routes,
+  seats: distro.settings.seats,
+  intakeStrongModel: distro.settings.intakeStrongModel,
+  budget: distro.settings.budget,
+  tokens: { ...defaultTokenModel, ...distro.settings.tools },
+  batchEveryMs: distro.settings.batchEveryHours * HOUR,
+  staleAfterMs: distro.settings.staleAfterDays * DAY,
+})
+
+export const defaultSimConfig: SimConfig = {
+  ...simSettingsFrom(baseDistro),
   seed: 1,
   days: 30,
   requestsPerDay: 40,
@@ -90,17 +107,10 @@ export const defaultSimConfig = {
   latencyMs: { min: 2000, max: 20000 },
   failureRate: 0.01,
   events: [],
-  questions: [],
   knowledgeEnabled: true,
-  batchEveryMs: DAY,
-  staleAfterMs: 14 * DAY,
   approvals: { enabled: true, rejectRate: 0.02, adminRejectRate: 0.3, modifyRate: 0.03 },
-  tokens: defaultTokenModel,
-  seats: defaultSeats,
   pricing: fakePricing,
-  routes: defaultRoutes,
-  intakeStrongModel: 'medium',
-} satisfies Partial<SimConfig>
+}
 
 const domains: Domain[] = ['access', 'deploy', 'incident']
 
@@ -200,7 +210,7 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       catalog: () => catalogOf(kb),
       models: { cheap: routeModel(config.routes, 'intake'), strong: config.intakeStrongModel },
       confidenceThreshold: 0.7,
-      budget: { tokens: 200_000, turns: 12, subagents: 0 },
+      budget: config.budget,
       agentFor: (domain) => `agent-${domain}`,
       recordUsage,
     },

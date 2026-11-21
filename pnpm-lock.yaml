@@ -39,7 +39,46 @@ importers:
         specifier: workspace:*
         version: link:../knowledge
 
+  packages/cli:
+    dependencies:
+      '@crewdesk/core':
+        specifier: workspace:*
+        version: link:../core
+      '@crewdesk/distro':
+        specifier: workspace:*
+        version: link:../distro
+      '@crewdesk/eval':
+        specifier: workspace:*
+        version: link:../eval
+      '@crewdesk/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
+      '@crewdesk/ops':
+        specifier: workspace:*
+        version: link:../ops
+      '@crewdesk/sim':
+        specifier: workspace:*
+        version: link:../sim
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
   packages/core: {}
+
+  packages/distro:
+    dependencies:
+      '@crewdesk/core':
+        specifier: workspace:*
+        version: link:../core
+      '@crewdesk/eval':
+        specifier: workspace:*
+        version: link:../eval
+      '@crewdesk/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   packages/eval:
     dependencies:
@@ -94,6 +133,9 @@ importers:
       '@crewdesk/core':
         specifier: workspace:*
         version: link:../core
+      '@crewdesk/distro':
+        specifier: workspace:*
+        version: link:../distro
       '@crewdesk/eval':
         specifier: workspace:*
         version: link:../eval

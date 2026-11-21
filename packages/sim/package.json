@@ -10,6 +10,7 @@
     "@crewdesk/approval": "workspace:*",
     "@crewdesk/batch": "workspace:*",
     "@crewdesk/core": "workspace:*",
+    "@crewdesk/distro": "workspace:*",
     "@crewdesk/eval": "workspace:*",
     "@crewdesk/intake": "workspace:*",
     "@crewdesk/knowledge": "workspace:*",
