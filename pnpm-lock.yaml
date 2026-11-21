@@ -23,11 +23,29 @@ importers:
 
   packages/core: {}
 
+  packages/intake:
+    dependencies:
+      '@crewdesk/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/runtime:
+    dependencies:
+      '@crewdesk/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/sim:
     dependencies:
       '@crewdesk/core':
         specifier: workspace:*
         version: link:../core
+      '@crewdesk/intake':
+        specifier: workspace:*
+        version: link:../intake
+      '@crewdesk/runtime':
+        specifier: workspace:*
+        version: link:../runtime
 
 packages:
 

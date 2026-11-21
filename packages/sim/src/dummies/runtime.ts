@@ -27,7 +27,7 @@ export type ScriptedRuntimeOptions = {
   clock: ClockPort
   random: RandomPort
   latencyMs: { min: number; max: number }
-  failureRate: number
+  failureRate(): number
   tokens: TokenModel
 }
 
@@ -100,7 +100,7 @@ export const createScriptedRuntime = (options: ScriptedRuntimeOptions): RuntimeP
       await clock.sleep(
         options.latencyMs.min + random.next() * (options.latencyMs.max - options.latencyMs.min),
       )
-      if (random.next() < options.failureRate) {
+      if (random.next() < options.failureRate()) {
         yield {
           type: 'error',
           code: 'RUNTIME_UNAVAILABLE',

@@ -55,7 +55,7 @@ runtimeContract('scripted', () => {
     clock,
     random: createSeededRandom(1),
     latencyMs: { min: 500, max: 3000 },
-    failureRate: 0,
+    failureRate: () => 0,
     tokens: defaultTokenModel,
   })
   return { runtime, settle: settleWith(clock) }
@@ -116,7 +116,7 @@ test('scripted runtime injects transient failures', async () => {
     clock,
     random: createSeededRandom(1),
     latencyMs: { min: 1, max: 2 },
-    failureRate: 1,
+    failureRate: () => 1,
     tokens: defaultTokenModel,
   })
   const events: RuntimeEvent[] = []

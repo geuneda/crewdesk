@@ -1,4 +1,4 @@
-import type { Budget, Domain, Json, JsonObject, KnowledgeEntry, Risk, Task, Urgency } from './types.ts'
+import type { Budget, Domain, Json, JsonObject, KnowledgeEntry, Risk, Stage, Task, Urgency } from './types.ts'
 
 export type InboundMessage = {
   id: string
@@ -39,6 +39,8 @@ export type ModelUsage = {
   outputTokens: number
   cachedTokens: number
 }
+
+export type UsageReport = { taskId: string; stage: Stage; usage: ModelUsage; ok: boolean }
 
 export type ClassifyRequest = { model: string; body: string; catalog: CatalogItem[] }
 export type ClassifyResponse = {

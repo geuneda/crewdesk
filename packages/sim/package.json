@@ -7,6 +7,8 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@crewdesk/core": "workspace:*"
+    "@crewdesk/core": "workspace:*",
+    "@crewdesk/intake": "workspace:*",
+    "@crewdesk/runtime": "workspace:*"
   }
 }

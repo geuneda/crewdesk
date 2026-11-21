@@ -34,12 +34,15 @@ export type ApprovalLevel = 'always' | 'recommend' | 'notify' | 'auto'
 
 export type ActionType = {
   id: string
+  system: string
+  action: string
   domain: Domain
   reversible: boolean
   owner: string
   approvalLevel: ApprovalLevel
   promoteAfter: number
   conditionFields: string[]
+  verify?: { resource: string; match: string[] }
 }
 
 export type ApprovalRecord = {
