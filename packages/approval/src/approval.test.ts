@@ -40,16 +40,18 @@ const task: Task = {
 }
 const action = { system: 'iam', action: 'grant', params: { uid: 'u9', sys: 'deployer', role_cd: 'DP' } }
 const deploy = { system: 'deployer', action: 'release', params: { svc: 's', ver: 'v1', env: 'P' } }
-const key = 'sys=deployer&role_cd=DP'
+const key = 'sys="deployer"&role_cd="DP"'
 
-const setup = () => {
+const setup = (options: { human?: boolean } = {}) => {
   let now = 0
+  let failAppend = false
   const opened: PendingApproval[] = []
   const stored: Record<string, JsonObject[]> = {}
   const notified: string[] = []
   const desk = createApprovalDesk({
     store: {
       append: async (kind, record) => {
+        if (failAppend && kind === 'approval') throw new Error('store down')
         stored[kind] = [...(stored[kind] ?? []), record]
       },
       put: async () => {},
@@ -60,53 +62,88 @@ const setup = () => {
     actionTypes: () => [grant, release],
     approverFor: (type) => type.owner,
     roleOf: () => 'member',
+    humanApproval: () => options.human ?? true,
     onPending: (pending) => void opened.push(pending),
     notify: async (approver) => void notified.push(approver),
   })
   const tick = () => {
     now += 1000
   }
-  const approveNext = async (
+  const run = async (
     taskId: string,
     what: DomainAction = action,
     domain: Task['domain'] = 'access',
+    ok = true,
   ) => {
     tick()
-    const permit = await desk.authorize({ ...task, id: taskId, domain }, what)
-    if (permit.status !== 'pending') return permit.status
-    const pending = opened.find((item) => item.id === permit.approvalId)
-    await desk.decide(permit.approvalId, { approver: pending?.approver ?? '', decision: 'approved' })
-    return 'approved'
+    const actor = { ...task, id: taskId, domain }
+    const permit = await desk.authorize(actor, what)
+    if (permit.status === 'denied') return 'denied'
+    if (permit.status === 'pending') {
+      const pending = opened.find((item) => item.id === permit.approvalId)
+      await desk.decide(permit.approvalId, { approver: pending?.approver ?? '', decision: 'approved' })
+    }
+    await desk.recordExecution(actor, what, ok)
+    return permit.status === 'pending' ? 'approved' : 'auto'
   }
-  const approveRule = async () => {
+  const approveRules = async () => {
     tick()
     const proposals = desk.proposePromotions()
-    for (const item of desk.pending())
-      await desk.decide(item.id, { approver: item.approver, decision: 'approved' })
+    for (const item of desk.pending()) {
+      if (item.kind === 'rule') await desk.decide(item.id, { approver: item.approver, decision: 'approved' })
+    }
     return proposals
   }
-  return { desk, opened, stored, notified, approveNext, approveRule, tick }
+  const promoteTo = async (level: string) => {
+    for (let n = 0; desk.rules()[0]?.level !== level; n += 1) {
+      await run(`p${level}${n}`)
+      await approveRules()
+    }
+  }
+  return {
+    desk,
+    opened,
+    stored,
+    notified,
+    run,
+    approveRules,
+    promoteTo,
+    tick,
+    breakStore: (broken: boolean) => {
+      failAppend = broken
+    },
+  }
 }
 
-test('the condition key uses only the configured fields', () => {
+test('the condition key keeps only the configured fields and their JSON types', () => {
   expect(conditionKeyOf(grant, action.params)).toBe(key)
+  expect(conditionKeyOf(grant, { sys: 1, role_cd: '1' })).not.toBe(
+    conditionKeyOf(grant, { sys: '1', role_cd: 1 }),
+  )
+  expect(conditionKeyOf(grant, { sys: 'deployer' })).not.toBe(
+    conditionKeyOf(grant, { sys: 'deployer', role_cd: '' }),
+  )
 })
 
-test('an unknown action or another domain is denied in code', async () => {
-  const { desk } = setup()
-  expect(await desk.authorize(task, { system: 'iam', action: 'drop', params: {} })).toMatchObject({
-    status: 'denied',
-    code: 'ACTION_NOT_PERMITTED',
-  })
-  expect(await desk.authorize({ ...task, domain: 'incident' }, action)).toMatchObject({ status: 'denied' })
+test('an unknown action or another domain is denied in code, even with human approval off', async () => {
+  for (const human of [true, false]) {
+    const { desk } = setup({ human })
+    expect(await desk.authorize(task, { system: 'iam', action: 'drop', params: {} })).toMatchObject({
+      status: 'denied',
+      code: 'ACTION_NOT_PERMITTED',
+    })
+    expect(await desk.authorize({ ...task, domain: 'incident' }, action)).toMatchObject({ status: 'denied' })
+  }
+  expect(await setup({ human: false }).desk.authorize(task, action)).toEqual({ status: 'allow' })
 })
 
 test('an action waits for its approver and only that approver can decide', async () => {
-  const { desk, opened } = setup()
+  const { desk, opened, stored } = setup()
   const permit = await desk.authorize(task, action)
   if (permit.status !== 'pending') throw new Error('expected pending')
   expect(await desk.authorize(task, action)).toEqual(permit)
   expect(opened).toHaveLength(1)
+  expect(stored.gate).toEqual([expect.objectContaining({ taskId: 't1', human: true, level: 'always' })])
   await expect(desk.decide(permit.approvalId, { approver: 'someone', decision: 'approved' })).rejects.toThrow(
     /may not decide/,
   )
@@ -114,48 +151,77 @@ test('an action waits for its approver and only that approver can decide', async
   await desk.decide(permit.approvalId, { approver: 'lead-access', decision: 'approved' })
   await waiting
   expect(await desk.authorize(task, action)).toEqual({ status: 'allow' })
+  desk.forget(task.id)
+  expect(await desk.authorize(task, action)).toMatchObject({ status: 'pending' })
+})
+
+test('a decision that cannot be saved stays pending and can be decided again', async () => {
+  const { desk, breakStore } = setup()
+  const permit = await desk.authorize(task, action)
+  if (permit.status !== 'pending') throw new Error('expected pending')
+  breakStore(true)
+  await expect(
+    desk.decide(permit.approvalId, { approver: 'lead-access', decision: 'approved' }),
+  ).rejects.toThrow(/store down/)
+  expect(await desk.authorize(task, action)).toEqual(permit)
+  breakStore(false)
+  await desk.decide(permit.approvalId, { approver: 'lead-access', decision: 'approved' })
+  expect(await desk.authorize(task, action)).toEqual({ status: 'allow' })
 })
 
 test('unmodified approvals in a row promote one level at a time once the owner approves the rule', async () => {
-  const { desk, approveNext, approveRule, notified, stored } = setup()
-  expect(await approveNext('a1')).toBe('approved')
+  const { desk, run, approveRules, notified, stored } = setup()
+  expect(await run('a1')).toBe('approved')
   expect(desk.proposePromotions()).toEqual([])
-  expect(await approveNext('a2')).toBe('approved')
-  expect(await approveRule()).toEqual([
+  expect(await run('a2')).toBe('approved')
+  expect(await approveRules()).toEqual([
     { actionType: 'iam.grant', conditionKey: key, from: 'always', to: 'recommend' },
   ])
   expect(desk.rules()).toEqual([{ actionType: 'iam.grant', conditionKey: key, level: 'recommend' }])
-  await approveNext('a3')
-  await approveNext('a4')
-  await approveRule()
+  await run('a3')
+  await run('a4')
+  await approveRules()
   expect(desk.rules()[0]?.level).toBe('notify')
-  expect(await approveNext('a5')).toBe('allow')
-  expect(await approveNext('a6')).toBe('allow')
+  expect(await run('a5')).toBe('auto')
+  expect(await run('a6')).toBe('auto')
   expect(notified).toEqual(['lead-access', 'lead-access'])
-  await approveRule()
+  await approveRules()
   expect(desk.rules()[0]?.level).toBe('auto')
   expect(stored.ruleChange?.map((change) => change.cause)).toEqual(['promotion', 'promotion', 'promotion'])
 })
 
+test('automatic runs that fail do not count toward the next promotion and send no notice', async () => {
+  const { desk, run, approveRules, promoteTo, notified } = setup()
+  await promoteTo('notify')
+  expect(await run('f1', action, 'access', false)).toBe('auto')
+  expect(await run('f2', action, 'access', false)).toBe('auto')
+  expect(await approveRules()).toEqual([])
+  expect(notified).toEqual([])
+  expect(desk.rules()[0]?.level).toBe('notify')
+})
+
+test('a call that lacks a condition field always goes to a human', async () => {
+  const { desk, promoteTo } = setup()
+  await promoteTo('auto')
+  const partial = { system: 'iam', action: 'grant', params: { uid: 'u9', sys: 'deployer' } }
+  expect(await desk.authorize({ ...task, id: 'x1' }, partial)).toMatchObject({ status: 'pending' })
+})
+
 test('an irreversible action never goes past recommend', async () => {
-  const { desk, approveNext, approveRule } = setup()
-  for (const id of ['d1', 'd2']) await approveNext(id, deploy, 'deploy')
-  await approveRule()
+  const { desk, run, approveRules } = setup()
+  for (const id of ['d1', 'd2']) await run(id, deploy, 'deploy')
+  await approveRules()
   expect(desk.rules()[0]?.level).toBe('recommend')
-  for (const id of ['d3', 'd4', 'd5', 'd6']) expect(await approveNext(id, deploy, 'deploy')).toBe('approved')
-  expect(await approveRule()).toEqual([])
+  for (const id of ['d3', 'd4', 'd5', 'd6']) expect(await run(id, deploy, 'deploy')).toBe('approved')
+  expect(await approveRules()).toEqual([])
   expect(
-    levelOf(release, 'env=P', [{ actionType: 'deployer.release', conditionKey: 'env=P', level: 'auto' }]),
+    levelOf(release, 'env="P"', [{ actionType: 'deployer.release', conditionKey: 'env="P"', level: 'auto' }]),
   ).toBe('recommend')
 })
 
-test('one rejection lowers the rule by one level and denies the action', async () => {
-  const { desk, approveNext, approveRule, tick, stored } = setup()
-  for (const id of ['a1', 'a2']) await approveNext(id)
-  await approveRule()
-  for (const id of ['a3', 'a4']) await approveNext(id)
-  await approveRule()
-  expect(desk.rules()[0]?.level).toBe('notify')
+test('one rejection or incident lowers the rule by one level', async () => {
+  const { desk, promoteTo, tick, stored } = setup()
+  await promoteTo('notify')
   await desk.reportIncident(action)
   expect(desk.rules()[0]?.level).toBe('recommend')
   tick()
@@ -173,6 +239,20 @@ test('one rejection lowers the rule by one level and denies the action', async (
     'incident',
     'rejection',
   ])
+})
+
+test('a promotion proposal made before a demotion expires instead of overriding it', async () => {
+  const { desk, run, promoteTo, tick } = setup()
+  await promoteTo('recommend')
+  await run('s1')
+  await run('s2')
+  tick()
+  expect(desk.proposePromotions()).toEqual([expect.objectContaining({ from: 'recommend', to: 'notify' })])
+  await desk.reportIncident(action)
+  expect(desk.rules()[0]?.level).toBe('always')
+  for (const item of desk.pending())
+    await desk.decide(item.id, { approver: item.approver, decision: 'approved' })
+  expect(desk.rules()[0]?.level).toBe('always')
 })
 
 test('a modified approval or a rejected rule proposal restarts the streak', () => {

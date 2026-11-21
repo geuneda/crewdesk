@@ -87,6 +87,22 @@ test('invalid knowledge is rejected with the file and entry named', () => {
   ).toThrow(/domain/)
 })
 
+test('a verify block must name the fields to match', () => {
+  const withVerify = (verify: string) => () =>
+    parseKnowledge([
+      {
+        name: 'v.yaml',
+        text: source.replace('conditionFields: [sys]', `conditionFields: [sys]\n      verify: ${verify}`),
+      },
+    ])
+  expect(withVerify('{ resource: grants }')).toThrow(/verify.match/)
+  expect(withVerify('grants')).toThrow(/verify must be a mapping/)
+  expect(actionTypesOf(withVerify('{ resource: grants, match: [uid] }')())[0]?.verify).toEqual({
+    resource: 'grants',
+    match: ['uid'],
+  })
+})
+
 test('documents are generated from the entries', () => {
   expect(renderGuide(fragmentFor(kb, 'access.grant'))).toBe(
     '- [role.deployer] concept="role", scope="deployer", aliases=배포자, value="DP" (추정)',

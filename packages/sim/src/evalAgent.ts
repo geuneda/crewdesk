@@ -46,6 +46,7 @@ export const createScriptedEvalAgent =
         recordUsage: async () => {},
         authorize: async () => ({ status: 'allow' }),
         awaitDecision: async () => {},
+        onExecuted: async () => {},
         onPause: async () => {},
         onResume: async () => {},
         retryDelayMs: 0,

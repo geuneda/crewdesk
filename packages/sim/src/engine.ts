@@ -14,9 +14,8 @@ import {
   actionTypesOf,
   approverOf,
   catalogOf,
-  fragmentFor,
+  createKnowledgeService,
   type KnowledgeBase,
-  lookup,
 } from '@crewdesk/knowledge'
 import { createLedger, type Pricing, placeTask, type Route, routeModel } from '@crewdesk/ops'
 import { type ApproverPolicy, createVirtualApprovers } from './approver.ts'
@@ -63,6 +62,8 @@ export type SimResult = {
   parked: JsonObject[]
   outbox: OutboundMessage[]
   approvals: ApprovalRecord[]
+  gates: JsonObject[]
+  knowledgeUse: JsonObject[]
   ruleChanges: JsonObject[]
   rules: ApprovalRule[]
   expected: Record<string, DomainAction>
@@ -128,6 +129,7 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
     actionTypes: () => actionTypesOf(config.kb),
     approverFor: (type) => approverOf(config.kb, type),
     roleOf: (uid) => (people.find((person) => person.uid === uid)?.lead ? 'lead' : 'member'),
+    humanApproval: () => config.approvals.enabled,
     onPending: (pending) => void approve(pending).catch(onError),
     notify: (approver, text) =>
       channel.send({ channel: `dm-${approver}`, thread: 'approvals', body: text, at: clock.now() }),
@@ -139,10 +141,17 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
     decide: approvals.decide,
   })
 
+  const knowledge = createKnowledgeService({
+    kb: () => config.kb,
+    store,
+    clock,
+    enabled: () => config.knowledgeEnabled,
+  })
+
   const desk = createDesk({
     store,
     queueFor: (domain) => queues[domain] ?? createMemoryQueue<Task>(),
-    knowledgeFor: (task) => (config.knowledgeEnabled ? fragmentFor(config.kb, task.taskType) : []),
+    knowledgeFor: knowledge.fragment,
     workModel: (task) => routeModel(config.routes, 'work', task.risk),
     place: (task) => {
       const home = seatOf(`seat-${task.domain}`)
@@ -161,6 +170,10 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       return placement
     },
     onPlaced: (task, seat) => ledger.assign(task.id, seat),
+    onFinished: (task) => {
+      ledger.unassign(task.id)
+      approvals.forget(task.id)
+    },
     onError,
     intake: {
       channel,
@@ -178,9 +191,10 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       runtime,
       systems,
       clock,
-      lookup: async (input) => (config.knowledgeEnabled ? lookup(config.kb, input) : []),
+      lookup: knowledge.lookup,
       recordUsage,
-      authorize: config.approvals.enabled ? approvals.authorize : async () => ({ status: 'allow' }),
+      authorize: approvals.authorize,
+      onExecuted: approvals.recordExecution,
       awaitDecision: approvals.awaitDecision,
       retryDelayMs: MINUTE,
       maxAttempts: 3,
@@ -232,6 +246,8 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
     parked: await store.list('parked'),
     outbox: channel.outbox(),
     approvals: (await store.list('approval')) as ApprovalRecord[],
+    gates: await store.list('gate'),
+    knowledgeUse: await store.list('knowledgeUse'),
     ruleChanges: await store.list('ruleChange'),
     rules: approvals.rules(),
     expected: Object.fromEntries(

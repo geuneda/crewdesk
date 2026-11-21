@@ -44,6 +44,7 @@ const depsFor = (runtime: RuntimePort) => {
     recordUsage: async () => {},
     authorize: async () => ({ status: 'allow' }),
     awaitDecision: async () => {},
+    onExecuted: async () => {},
     onPause: async () => {},
     onResume: async () => {},
     retryDelayMs: 1,

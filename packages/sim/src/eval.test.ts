@@ -61,3 +61,17 @@ test('without knowledge every code value question fails', async () => {
   const report = await runEval({ ...optionsFor(empty), cache: createSqliteStore() })
   expect(report.accuracy).toBe(0)
 })
+
+test('zero runs is an error and a one-run result is not reused for three runs', async () => {
+  const cache = createSqliteStore()
+  await expect(runEval({ ...optionsFor(kb), cache, runs: 0 })).rejects.toThrow(/runs must be/)
+  await runEval({ ...optionsFor(kb), cache })
+  expect((await runEval({ ...optionsFor(kb), cache, runs: 3 })).ran).toBe(questions.length)
+})
+
+test('removing the task type of a cached question is reported, not served from cache', async () => {
+  const cache = createSqliteStore()
+  await runEval({ ...optionsFor(kb), cache })
+  const without = { entries: kb.entries.filter((entry) => entry.id !== 'taskType.deploy.release') }
+  await expect(runEval({ ...optionsFor(without), cache })).rejects.toThrow(/unknown task type deploy.release/)
+})

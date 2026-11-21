@@ -11,24 +11,31 @@ export type ApprovalDay = {
 
 const median = (values: number[]): number => {
   const sorted = [...values].sort((a, b) => a - b)
-  return sorted[Math.floor(sorted.length / 2)] ?? 0
+  const middle = Math.floor(sorted.length / 2)
+  const upper = sorted[middle] ?? 0
+  return sorted.length % 2 === 0 ? ((sorted[middle - 1] ?? upper) + upper) / 2 : upper
 }
 
 const round = (value: number, digits = 2) => Number(value.toFixed(digits))
 
-export const approvalCurve = (records: ApprovalRecord[]): ApprovalDay[] => {
-  const dayOf = (record: ApprovalRecord) => Math.floor((record.decidedAt - record.decidedInMs) / DAY)
-  return [...new Set(records.map(dayOf))]
+export const approvalCurve = (gates: JsonObject[], records: ApprovalRecord[]): ApprovalDay[] => {
+  const dayOf = (at: unknown) => Math.floor(Number(at) / DAY)
+  return [...new Set(gates.map((gate) => dayOf(gate.at)))]
     .sort((a, b) => a - b)
     .map((day) => {
-      const actions = records.filter((record) => dayOf(record) === day)
-      const requested = actions.filter((record) => record.approver !== 'policy')
+      const actions = gates.filter((gate) => dayOf(gate.at) === day)
+      const requested = actions.filter((gate) => gate.human === true)
+      const waits = records
+        .filter(
+          (record) => record.approver !== 'policy' && dayOf(record.decidedAt - record.decidedInMs) === day,
+        )
+        .map((record) => record.decidedInMs)
       return {
         day,
         actions: actions.length,
         requested: requested.length,
         ratio: round(requested.length / actions.length),
-        medianWaitMinutes: round(median(requested.map((record) => record.decidedInMs)) / MINUTE, 1),
+        medianWaitMinutes: round(median(waits) / MINUTE, 1),
       }
     })
 }
@@ -40,8 +47,12 @@ export const weeklyRatios = (curve: ApprovalDay[]): { week: number; actions: num
     return { week, actions, ratio: round(points.reduce((sum, point) => sum + point.requested, 0) / actions) }
   })
 
-export const renderApprovalReport = (records: ApprovalRecord[], ruleChanges: JsonObject[]): string => {
-  const curve = approvalCurve(records)
+export const renderApprovalReport = (
+  gates: JsonObject[],
+  records: ApprovalRecord[],
+  ruleChanges: JsonObject[],
+): string => {
+  const curve = approvalCurve(gates, records)
   return [
     '# 보고서 2: 승인 요청 비율',
     '',
@@ -55,7 +66,7 @@ export const renderApprovalReport = (records: ApprovalRecord[], ruleChanges: Jso
     '',
     '## 일별',
     '',
-    '| 일 | 액션 수 | 승인 요청 | 비율 | 승인 대기 중앙값(분) |',
+    '| 일 | 액션 수 | 승인 요청 | 비율 | 결정된 건의 대기 중앙값(분) |',
     '|---|---|---|---|---|',
     ...curve.map(
       (point) =>

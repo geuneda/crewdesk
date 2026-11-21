@@ -53,6 +53,13 @@ const toEntry = (raw: unknown, source: string): KnowledgeEntry => {
   }
 }
 
+const verifyOf = (raw: unknown, where: string) => {
+  if (!isObject(raw)) throw new Error(`${where}: verify must be a mapping`)
+  const match = texts(raw, 'match', where)
+  if (match.length === 0) throw new Error(`${where}: verify.match must list at least one field`)
+  return { resource: text(raw, 'resource', where), match }
+}
+
 const typed = (kb: KnowledgeBase, type: string) =>
   kb.entries.filter((entry) => entry.kind === 'entity' && entry.data.type === type)
 
@@ -83,9 +90,7 @@ export const actionTypesOf = (kb: KnowledgeBase): ActionType[] =>
       approvalLevel: oneOf(data, 'approvalLevel', levels, id),
       promoteAfter: data.promoteAfter,
       conditionFields: texts(data, 'conditionFields', id),
-      ...(isObject(data.verify)
-        ? { verify: { resource: text(data.verify, 'resource', id), match: texts(data.verify, 'match', id) } }
-        : {}),
+      ...(data.verify === undefined ? {} : { verify: verifyOf(data.verify, id) }),
     }
   })
 

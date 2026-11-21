@@ -16,8 +16,13 @@ export const capOf = (type: ActionType): ApprovalLevel => (type.reversible ? 'au
 export const promoted = (level: ApprovalLevel): ApprovalLevel => order[rank(level) + 1] ?? level
 export const demoted = (level: ApprovalLevel): ApprovalLevel => order[rank(level) - 1] ?? level
 
+export const hasConditionFields = (type: ActionType, params: JsonObject): boolean =>
+  type.conditionFields.every((field) => params[field] !== undefined)
+
 export const conditionKeyOf = (type: ActionType, params: JsonObject): string =>
-  type.conditionFields.map((field) => `${field}=${String(params[field])}`).join('&')
+  type.conditionFields
+    .map((field) => `${field}=${params[field] === undefined ? '' : JSON.stringify(params[field])}`)
+    .join('&')
 
 export const levelOf = (type: ActionType, conditionKey: string, rules: ApprovalRule[]): ApprovalLevel => {
   const rule = rules.find((item) => item.actionType === type.id && item.conditionKey === conditionKey)

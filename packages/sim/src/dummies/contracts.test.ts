@@ -1,4 +1,4 @@
-import type { CatalogItem, RuntimeEvent } from '@crewdesk/core'
+import type { CatalogItem, RuntimeEvent, Task } from '@crewdesk/core'
 import {
   channelContract,
   clockContract,
@@ -149,4 +149,43 @@ test('scripted runtime injects transient failures', async () => {
   await clock.runUntil(Number.POSITIVE_INFINITY)
   await run
   expect(events).toEqual([expect.objectContaining({ type: 'error', transient: true })])
+})
+
+test('scripted runtime starts no turn it cannot pay for', async () => {
+  const clock = createVirtualClock()
+  const runtime = createScriptedRuntime({
+    script: probe,
+    clock,
+    random: createSeededRandom(1),
+    latencyMs: { min: 1, max: 2 },
+    failureRate: () => 0,
+    tokens: defaultTokenModel,
+  })
+  const events: RuntimeEvent[] = []
+  const task: Task = {
+    id: 't',
+    requester: 'u',
+    channel: 'c',
+    thread: 'th',
+    body: 'b',
+    domain: 'access',
+    taskType: 'x',
+    risk: 'low',
+    urgency: 'low',
+    status: 'running',
+    budget: { tokens: 100, turns: 5, subagents: 0 },
+    createdAt: 0,
+  }
+  const run = (async () => {
+    for await (const event of runtime.start(
+      { task, agent: 'a', model: 'm', knowledge: [], budget: task.budget },
+      { call: async () => ({ status: 'ok', output: {} }) },
+    ))
+      events.push(event)
+  })()
+  await clock.runUntil(Number.POSITIVE_INFINITY)
+  await run
+  expect(events).toEqual([
+    expect.objectContaining({ type: 'error', code: 'BUDGET_EXCEEDED', transient: false }),
+  ])
 })

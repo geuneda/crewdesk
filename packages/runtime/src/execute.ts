@@ -25,6 +25,7 @@ export type ExecutionDeps = {
   recordUsage(report: UsageReport): Promise<void>
   authorize(task: Task, action: DomainAction): Promise<Authorization>
   awaitDecision(approvalId: string): Promise<void>
+  onExecuted(task: Task, action: DomainAction, ok: boolean): Promise<void>
   onPause(task: Task): Promise<void>
   onResume(task: Task): Promise<void>
   retryDelayMs: number
@@ -109,6 +110,7 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
         if (permit.status === 'denied') return { status: 'error', code: permit.code, message: permit.message }
         const result = await deps.systems.execute(request)
         actions = [...actions, { action: request, result }]
+        await deps.onExecuted(task, request, result.ok)
         return toToolResult(result)
       }
       return { status: 'error', code: 'UNKNOWN_TOOL', message: tool }
@@ -164,6 +166,7 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
     errorCounts = { ...errorCounts, [stop.code]: seen }
     if (!stop.transient || seen >= 2) return finish(false, {}, `RUNTIME_ERROR:${stop.code}`)
     if (attempts >= deps.maxAttempts) return finish(false, {}, 'RETRY_LIMIT')
+    if (remaining().tokens === 0 || remaining().turns === 0) return finish(false, {}, 'BUDGET_EXCEEDED')
     attempts += 1
     await deps.clock.sleep(deps.retryDelayMs)
     stream = start()

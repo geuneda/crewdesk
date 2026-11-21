@@ -24,7 +24,7 @@ export type LedgerDeps = {
 }
 
 export const createLedger = (deps: LedgerDeps) => {
-  let seatOfTask: Record<string, string> = {}
+  const seatOfTask = new Map<string, string>()
   let used: Record<string, number> = {}
 
   const seatById = (id: string): Seat => {
@@ -45,13 +45,16 @@ export const createLedger = (deps: LedgerDeps) => {
   return {
     assign: (taskId: string, seatId: string): void => {
       seatById(seatId)
-      seatOfTask = { ...seatOfTask, [taskId]: seatId }
+      seatOfTask.set(taskId, seatId)
+    },
+    unassign: (taskId: string): void => {
+      seatOfTask.delete(taskId)
     },
     left: (seatId: string): number => quotaLeft(seatById(seatId), usedIn(seatId)),
     resetAt: (seatId: string): number => quotaResetAt(seatById(seatId), usedIn(seatId), deps.clock.now()),
     drain: (seatId: string, units: number): void => consume(seatById(seatId), units),
     record: async ({ taskId, stage, usage, ok }: UsageReport): Promise<UsageRecord> => {
-      const seat = seatById((stage === 'work' && seatOfTask[taskId]) || deps.sharedSeat)
+      const seat = seatById((stage === 'work' && seatOfTask.get(taskId)) || deps.sharedSeat)
       const units = quotaUnits(usage)
       const limit = seat.windows?.[0]?.limit
       const record: UsageRecord = {

@@ -35,10 +35,11 @@ const setup = (wrap: (channel: ChannelPort) => ChannelPort = (channel) => channe
   const desk = createDesk({
     store,
     queueFor: () => queue,
-    knowledgeFor: () => [],
+    knowledgeFor: async () => [],
     workModel: () => 'medium',
     place: () => ({ kind: 'run', seat: 'seat-deploy', exclusive: true }),
     onPlaced: () => {},
+    onFinished: () => {},
     onError: (error) => void errors.push(error),
     intake: {
       channel,
@@ -76,6 +77,7 @@ const setup = (wrap: (channel: ChannelPort) => ChannelPort = (channel) => channe
       recordUsage: async () => {},
       authorize: async () => ({ status: 'allow' }),
       awaitDecision: async () => {},
+      onExecuted: async () => {},
       retryDelayMs: 1,
       maxAttempts: 3,
     },

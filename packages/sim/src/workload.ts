@@ -74,6 +74,7 @@ const request = (random: RandomPort): { body: string; expected: DomainAction } =
 }
 
 const paramSources: Record<string, string> = {
+  uid: 'iam/accounts/uid',
   role_cd: 'iam/role_codes/cd',
   env: 'deployer/envs/cd',
   sev: 'incident/severities/cd',

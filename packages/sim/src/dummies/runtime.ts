@@ -36,6 +36,7 @@ type Session = {
   steps: Generator<ScriptStep, ScriptEnd, ToolResult>
   history: number
   turn: number
+  spent: number
   calls: number
 }
 
@@ -54,7 +55,7 @@ export const createScriptedRuntime = (options: ScriptedRuntimeOptions): RuntimeP
   const paused = new Map<string, { session: Session; call: ToolCall }>()
   let tokenSeq = 0
 
-  const usage = (session: Session): RuntimeEvent => {
+  const usage = (session: Session): Extract<RuntimeEvent, { type: 'usage' }> => {
     const prefix =
       tokens.systemTokens + size(session.request.knowledge) + (tokens.codeMode ? 0 : tokens.toolSchemaTokens)
     const fresh = size(session.request.task.body) + session.history
@@ -109,12 +110,21 @@ export const createScriptedRuntime = (options: ScriptedRuntimeOptions): RuntimeP
         }
         return
       }
-      if (session.turn >= session.request.budget.turns) {
-        yield { type: 'error', code: 'BUDGET_EXCEEDED', transient: false, message: 'turn budget used up' }
+      const next = usage({ ...session, turn: session.turn + 1 })
+      const cost = next.inputTokens + next.outputTokens + next.cachedTokens
+      const { budget } = session.request
+      if (session.turn >= budget.turns || session.spent + cost > budget.tokens) {
+        yield {
+          type: 'error',
+          code: 'BUDGET_EXCEEDED',
+          transient: false,
+          message: 'the run budget is used up',
+        }
         return
       }
       session.turn += 1
-      yield usage(session)
+      session.spent += cost
+      yield next
       const step = last ? session.steps.next(last) : session.steps.next()
       if (step.done) {
         yield { type: 'text', text: step.value.text }
@@ -130,7 +140,11 @@ export const createScriptedRuntime = (options: ScriptedRuntimeOptions): RuntimeP
 
   return {
     start: (request, tools) =>
-      turns({ request, steps: options.script(request), history: 0, turn: 0, calls: 0 }, tools, null),
+      turns(
+        { request, steps: options.script(request), history: 0, turn: 0, spent: 0, calls: 0 },
+        tools,
+        null,
+      ),
     resume: async function* (resumeToken, tools) {
       const entry = paused.get(resumeToken)
       if (!entry) {

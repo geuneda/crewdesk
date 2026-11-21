@@ -34,7 +34,7 @@ const verifyAction = async (deps: CloseDeps, { action }: ExecutedAction): Promis
         typeof pair[1] === 'string' || typeof pair[1] === 'number',
     ),
   )
-  if (Object.keys(where).length !== pairs.length) return false
+  if (pairs.length === 0 || Object.keys(where).length !== pairs.length) return false
   const rows = await deps.systems.query({ system: action.system, resource: spec.verify.resource, where })
   return rows.ok && rows.value.length > 0
 }

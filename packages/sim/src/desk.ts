@@ -9,10 +9,11 @@ export type DeskDeps = {
   close: CloseDeps
   store: StorePort
   queueFor(domain: Domain): QueuePort<Task>
-  knowledgeFor(task: Task): KnowledgeEntry[]
+  knowledgeFor(task: Task): Promise<KnowledgeEntry[]>
   workModel(task: Task): string
   place(task: Task): Placement
   onPlaced(task: Task, seat: string): void
+  onFinished(task: Task): void
   onError(error: unknown): void
 }
 
@@ -62,7 +63,7 @@ export const createDesk = (deps: DeskDeps) => {
         task: { ...task, status: 'running' as const },
         agent: deps.intake.agentFor(task.domain),
         model: deps.workModel(task),
-        knowledge: deps.knowledgeFor(task),
+        knowledge: await deps.knowledgeFor(task),
       }
       const execution = await executeTask(
         {
@@ -87,6 +88,7 @@ export const createDesk = (deps: DeskDeps) => {
       release(task)
       exclusive = new Set([...exclusive].filter((taskId) => taskId !== task.id))
       active = active.filter((item) => item.taskId !== task.id)
+      deps.onFinished(task)
     }
   }
 

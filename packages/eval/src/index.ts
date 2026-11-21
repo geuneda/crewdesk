@@ -1,5 +1,5 @@
 import type { DomainAction, JsonObject, KnowledgeEntry, StorePort } from '@crewdesk/core'
-import { entryHash, fragmentFor, hashOf, type KnowledgeBase, lookup } from '@crewdesk/knowledge'
+import { catalogOf, entryHash, fragmentFor, hashOf, type KnowledgeBase, lookup } from '@crewdesk/knowledge'
 import type { ExecutedAction } from '@crewdesk/runtime'
 import { parse } from 'yaml'
 
@@ -66,9 +66,23 @@ export const gradeLastAction = (expect: DomainAction, actions: ExecutedAction[])
   return last !== undefined && hashOf(last.action) === hashOf(expect)
 }
 
+const runsOf = (options: EvalOptions): number => {
+  const runs = options.runs ?? 1
+  if (!Number.isInteger(runs) || runs < 1) throw new Error('runs must be a positive whole number')
+  return runs
+}
+
+const catalogItemOf = (options: EvalOptions, question: Question) => {
+  const item = catalogOf(options.kb).find((candidate) => candidate.taskType === question.taskType)
+  if (!item) throw new Error(`question ${question.id} uses an unknown task type ${question.taskType}`)
+  return item
+}
+
 const cacheKey = (options: EvalOptions, question: Question, lookups: JsonObject[]): string =>
   hashOf({
     question,
+    runs: runsOf(options),
+    catalogItem: catalogItemOf(options, question),
     promptVersion: options.promptVersion,
     model: options.model,
     fragment: fragmentFor(options.kb, question.taskType).map((entry) => [entry.id, entryHash(entry)]),
@@ -78,7 +92,7 @@ const cacheKey = (options: EvalOptions, question: Question, lookups: JsonObject[
 const runQuestion = async (options: EvalOptions, question: Question) => {
   const fragment = fragmentFor(options.kb, question.taskType)
   const attempts = await Promise.all(
-    Array.from({ length: options.runs ?? 1 }, async () => {
+    Array.from({ length: runsOf(options) }, async () => {
       let lookups: JsonObject[] = []
       let found: string[] = []
       const { actions } = await options.agent(
