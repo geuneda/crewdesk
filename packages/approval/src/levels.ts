@@ -42,16 +42,16 @@ export const proposePromotions = (
   types: ActionType[],
   rules: ApprovalRule[],
   records: ApprovalRecord[],
-  recordsBeforeLastRuleDecision: (actionType: string, conditionKey: string) => number,
+  afterLastRuleDecision: (record: ApprovalRecord) => boolean,
 ): RuleProposal[] =>
   types.flatMap((type) => {
     const mine = records.filter((record) => record.actionType === type.id)
     return [...new Set(mine.map((record) => record.conditionKey))].flatMap((conditionKey) => {
       const from = levelOf(type, conditionKey, rules)
       if (rank(from) >= rank(capOf(type))) return []
-      const recent = records
-        .slice(recordsBeforeLastRuleDecision(type.id, conditionKey))
-        .filter((record) => record.actionType === type.id && record.conditionKey === conditionKey)
+      const recent = mine.filter(
+        (record) => record.conditionKey === conditionKey && afterLastRuleDecision(record),
+      )
       const firstBreak = recent.findLastIndex(
         (record) => record.decision !== 'approved' || record.modified || record.level !== from,
       )

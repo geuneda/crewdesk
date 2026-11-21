@@ -272,9 +272,11 @@ test('a modified approval or a rejected rule proposal restarts the streak', () =
     decidedAt,
     level: 'always',
   })
-  expect(proposePromotions([grant], [], [record(1), record(2, true), record(3)], () => 0)).toEqual([])
-  expect(proposePromotions([grant], [], [record(1), record(2), record(3)], () => 2)).toEqual([])
-  expect(proposePromotions([grant], [], [record(1, true), record(2), record(3)], () => 0)).toHaveLength(1)
+  expect(proposePromotions([grant], [], [record(1), record(2, true), record(3)], () => true)).toEqual([])
+  expect(
+    proposePromotions([grant], [], [record(1), record(2), record(3)], (item) => item.decidedAt > 2),
+  ).toEqual([])
+  expect(proposePromotions([grant], [], [record(1, true), record(2), record(3)], () => true)).toHaveLength(1)
 })
 
 test('a promotion approved while a demotion is being saved does not override it', async () => {
@@ -380,4 +382,17 @@ test('approvals after an incident count even when the clock has not moved', asyn
   await run('a1')
   await run('a2')
   expect(desk.proposePromotions()).toHaveLength(1)
+})
+
+test('an approval that was being saved when an incident was reported does not count after it', async () => {
+  const { desk } = setup()
+  const permits = await Promise.all(['b1', 'b2'].map((id) => desk.authorize({ ...task, id }, action)))
+  const saving = permits.map((permit) =>
+    permit.status === 'pending'
+      ? desk.decide(permit.approvalId, { approver: 'lead-access', decision: 'approved' })
+      : Promise.reject(new Error('expected pending')),
+  )
+  const incident = desk.reportIncident(action)
+  await Promise.all([...saving, incident])
+  expect(desk.proposePromotions()).toEqual([])
 })

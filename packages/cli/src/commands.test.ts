@@ -270,6 +270,12 @@ test('recordings that are incomplete or made for another distro are refused', as
       recordings: file.recordings.map((item) => (item.run === 1 ? { ...item, run: 0 } : item)),
     }),
   ).rejects.toThrow(/lack complete runs for/)
+  const retried = file.recordings.flatMap((item) =>
+    item.run === 0 ? [item, { ...item, attempt: 1 }] : [item],
+  )
+  await expect(
+    simWith({ ...file, recordings: retried.filter((item) => item.run !== 0 || item.attempt === 1) }),
+  ).rejects.toThrow(/lack complete runs for/)
   await expect(simWith({ ...file, inputHash: 'other' })).rejects.toThrow(
     /other questions, knowledge, or prompt/,
   )
@@ -307,6 +313,15 @@ test('a literal dotted key does not hide a conflict on the nested path of the sa
   }
   const { conflicts } = planUpgrade(snapshotOf(withA('x')), snapshotOf(withA('y')), overlay)
   expect(conflicts).toEqual([{ path: 'knowledge.env.prod.a.b', overlay: 2, was: 'x', now: 'y' }])
+  const both = (value: string) => ({
+    ...base,
+    kb: patchEntry(base.kb, 'env.prod', { a: { b: value }, 'a.b': value }),
+  })
+  expect(
+    planUpgrade(snapshotOf(both('x')), snapshotOf(both('y')), overlay).conflicts.map(
+      (conflict) => conflict.path,
+    ),
+  ).toEqual(['knowledge.env.prod.["a.b"]', 'knowledge.env.prod.a.b'])
 })
 
 test('a deployment directory takes one command at a time', async () => {

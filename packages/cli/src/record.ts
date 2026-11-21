@@ -23,7 +23,7 @@ export type RecordingFile = {
   recordings: RunRecording[]
 }
 
-type RunRecording = Recording & { run: number }
+type RunRecording = Recording & { run: number; attempt: number }
 
 const promptOf = (distro: Distro): string => {
   if (!distro.prompts.work) throw new Error('the distro has no prompts/work.md')
@@ -66,10 +66,12 @@ export const record = async (options: {
     models: realModels,
     ...(options.run ? { run: options.run } : {}),
   })
-  const recorderFor = (run: number) =>
-    recordRuntime(claude, conditionKey, (recording) => {
-      recordings = [...recordings, { ...recording, run }]
+  const recorderFor = (run: number) => {
+    let attempts = 0
+    return recordRuntime(claude, conditionKey, (recording) => {
+      recordings = [...recordings, { ...recording, run, attempt: attempts++ }]
     })
+  }
   const rows = await measureKnowledgeEffect({
     kb: distro.kb,
     questions: distro.questions,
@@ -121,6 +123,7 @@ export const readRecordings = async (path: string): Promise<RecordingFile> => {
       (item) =>
         typeof item?.key === 'string' &&
         typeof item.run === 'number' &&
+        typeof item.attempt === 'number' &&
         Array.isArray(item.events) &&
         item.events.every(isEvent),
     )
@@ -149,10 +152,14 @@ export const replayKnowledgeEffect = async (
       Array.from({ length: file.runs }, () => `eval-${question.id}|${condition}`),
     ),
   )
-  const takesOf = (run: number) => file.recordings.filter((item) => item.run === run)
+  const takesOf = (run: number) =>
+    file.recordings.filter((item) => item.run === run).sort((a, b) => a.attempt - b.attempt)
   const short = expected.filter((key, run) => {
     const takes = takesOf(run)
-    return takes.length === 0 || !takes.every((take) => take.key === key && complete(take))
+    return (
+      takes.length === 0 ||
+      !takes.every((take, attempt) => take.key === key && take.attempt === attempt && complete(take))
+    )
   })
   if (short.length > 0) {
     throw new Error(`the recordings lack complete runs for: ${[...new Set(short)].join(', ')}`)

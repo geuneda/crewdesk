@@ -66,6 +66,8 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
   let records: ApprovalRecord[] = []
   let pending: PendingApproval[] = []
   let ruleDecidedAt: Record<string, number> = {}
+  let order = 0
+  const orderOf = new Map<ApprovalRecord, number>()
   let seq = 0
   let ruleTail: Promise<unknown> = Promise.resolve()
   const gateOfCall = new Map<string, Map<string, Gate>>()
@@ -90,12 +92,13 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
       : 'always'
 
   const record = async (entry: ApprovalRecord) => {
+    orderOf.set(entry, ++order)
     await deps.store.append('approval', entry)
     records = [...records, entry]
   }
 
   const markRuleDecided = (actionType: string, conditionKey: string) => {
-    ruleDecidedAt = { ...ruleDecidedAt, [ruleKey(actionType, conditionKey)]: records.length }
+    ruleDecidedAt = { ...ruleDecidedAt, [ruleKey(actionType, conditionKey)]: ++order }
   }
 
   const setRule = async (rule: ApprovalRule, from: ApprovalLevel, cause: string) => {
@@ -297,7 +300,8 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
         deps.actionTypes(),
         rules,
         records,
-        (actionType, conditionKey) => ruleDecidedAt[ruleKey(actionType, conditionKey)] ?? 0,
+        (record) =>
+          (orderOf.get(record) ?? 0) > (ruleDecidedAt[ruleKey(record.actionType, record.conditionKey)] ?? 0),
       ).filter(
         (proposal) =>
           !openProposals.some(
