@@ -4,5 +4,5 @@ dist/
 .env
 .env.*
 *.db
-reports/
+/reports/
 .DS_Store

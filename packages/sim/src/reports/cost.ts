@@ -113,7 +113,11 @@ export const runBreakEven = async (
         overflowUsd: round(usd(seated.usage.filter((record) => record.seat === 'seat-overflow')), 2),
         parkedTasks: new Set(seated.parked.map((entry) => entry.taskId)).size,
         cheaper:
-          closed(seated) < closed(metered) * 0.98 ? 'incomparable' : seatUsd < meteredUsd ? 'seat' : 'metered',
+          closed(seated) < closed(metered) * 0.98
+            ? 'incomparable'
+            : seatUsd < meteredUsd
+              ? 'seat'
+              : 'metered',
       }
     }),
   )
