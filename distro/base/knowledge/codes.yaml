@@ -1,0 +1,71 @@
+entries:
+  - id: role.deployer.deployer
+    kind: mapping
+    owner: u1001
+    confidence: confirmed
+    taskTypes: [access.grant]
+    evidence: iam/role_codes 에서 sys=deployer, cd=DP
+    lastVerifiedAt: "2026-11-01"
+    data: { concept: role, scope: deployer, aliases: [배포자], value: DP }
+  - id: role.deployer.reader
+    kind: mapping
+    owner: u1001
+    confidence: confirmed
+    taskTypes: [access.grant]
+    data: { concept: role, scope: deployer, aliases: [조회], value: RO }
+  - id: role.incident.oncall
+    kind: mapping
+    owner: u1001
+    confidence: confirmed
+    taskTypes: [access.grant]
+    data: { concept: role, scope: incident, aliases: [온콜], value: OC }
+  - id: role.incident.reader
+    kind: mapping
+    owner: u1001
+    confidence: confirmed
+    taskTypes: [access.grant]
+    data: { concept: role, scope: incident, aliases: [조회], value: RO }
+  - id: role.iam.admin
+    kind: mapping
+    owner: u1001
+    confidence: assumed
+    taskTypes: [access.grant]
+    evidence: iam/role_codes 에 sys=iam 인 코드가 AD 하나뿐
+    data: { concept: role, scope: iam, aliases: [관리자], value: AD }
+  - id: env.prod
+    kind: mapping
+    owner: u1002
+    confidence: confirmed
+    taskTypes: [deploy.release]
+    data: { concept: env, aliases: [운영], value: P }
+  - id: env.staging
+    kind: mapping
+    owner: u1002
+    confidence: confirmed
+    taskTypes: [deploy.release]
+    data: { concept: env, aliases: [스테이징], value: S }
+  - id: rule.deploy.staging-first
+    kind: rule
+    owner: u1002
+    confidence: confirmed
+    taskTypes: [deploy.release]
+    evidence: deployer 가 S 배포 없는 P 배포를 PRECONDITION_FAILED 로 거부
+    data: { concept: procedure, before: P, requires: S }
+  - id: severity.s1
+    kind: mapping
+    owner: u1003
+    confidence: confirmed
+    taskTypes: [incident.open]
+    data: { concept: severity, aliases: [긴급], value: S1 }
+  - id: severity.s2
+    kind: mapping
+    owner: u1003
+    confidence: confirmed
+    taskTypes: [incident.open]
+    data: { concept: severity, aliases: [높음], value: S2 }
+  - id: severity.s3
+    kind: mapping
+    owner: u1003
+    confidence: confirmed
+    taskTypes: [incident.open]
+    data: { concept: severity, aliases: [보통], value: S3 }

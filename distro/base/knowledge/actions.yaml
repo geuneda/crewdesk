@@ -1,0 +1,59 @@
+entries:
+  - id: actionType.iam.grant
+    kind: entity
+    owner: u1001
+    confidence: confirmed
+    data:
+      type: ActionType
+      system: iam
+      action: grant
+      domain: access
+      reversible: true
+      approvalLevel: always
+      promoteAfter: 5
+      conditionFields: [sys, role_cd]
+      verify: { resource: grants, match: [uid, sys, role_cd] }
+  - id: actionType.deployer.release
+    kind: entity
+    owner: u1002
+    confidence: confirmed
+    data:
+      type: ActionType
+      system: deployer
+      action: release
+      domain: deploy
+      reversible: false
+      approvalLevel: always
+      promoteAfter: 8
+      conditionFields: [env]
+      verify: { resource: releases, match: [svc, ver, env] }
+  - id: actionType.incident.open
+    kind: entity
+    owner: u1003
+    confidence: confirmed
+    data:
+      type: ActionType
+      system: incident
+      action: open
+      domain: incident
+      reversible: true
+      approvalLevel: always
+      promoteAfter: 3
+      conditionFields: [sev]
+      verify: { resource: tickets, match: [svc, sev, grp] }
+  - id: approves.iam.grant
+    kind: relation
+    owner: u1001
+    confidence: confirmed
+    evidence: iam/accounts 의 플랫폼팀 리더 계정
+    data: { type: approves, actionType: iam.grant, approver: u1001 }
+  - id: approves.deployer.release
+    kind: relation
+    owner: u1002
+    confidence: confirmed
+    data: { type: approves, actionType: deployer.release, approver: u1002 }
+  - id: approves.incident.open
+    kind: relation
+    owner: u1003
+    confidence: confirmed
+    data: { type: approves, actionType: incident.open, approver: u1003 }

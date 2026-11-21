@@ -1,14 +1,9 @@
 import { expect, test } from 'vitest'
-import { baselineActionTypes, baselineCatalog, baselineKnowledge } from './company/baseline.ts'
+import { loadBaseKnowledge } from './company/base.ts'
 import { defaultSimConfig, runSimulation, type SimConfig, summarize } from './engine.ts'
 import { DAY, HOUR } from './time.ts'
 
-const config: SimConfig = {
-  ...defaultSimConfig,
-  knowledge: baselineKnowledge,
-  catalog: baselineCatalog,
-  actionTypes: baselineActionTypes,
-}
+const config: SimConfig = { ...defaultSimConfig, kb: await loadBaseKnowledge() }
 
 test('the same seed gives the same 30 day result', async () => {
   const [first, second, other] = await Promise.all([
@@ -60,4 +55,13 @@ test('a burst adds requests inside its window', async () => {
   const calm = await runSimulation({ ...config, days: 1 })
   const busy = await runSimulation({ ...config, days: 1, events: [burst] })
   expect(busy.messages).toBeGreaterThan(calm.messages + 20)
+})
+
+test('without knowledge the scripted agent fails every code value task', async () => {
+  const summary = summarize(
+    await runSimulation({ ...config, days: 2, failureRate: 0, knowledgeEnabled: false }),
+  )
+  expect(summary.tasks).toBeGreaterThan(30)
+  expect(summary.done).toBe(0)
+  expect(summary.reasons.AGENT_REPORTED_FAILURE).toBe(summary.tasks)
 })

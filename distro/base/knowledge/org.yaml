@@ -1,0 +1,36 @@
+entries:
+  - id: system.iam
+    kind: entity
+    owner: u1001
+    confidence: confirmed
+    data: { type: System, key: iam, name: 계정 시스템 }
+  - id: system.deployer
+    kind: entity
+    owner: u1002
+    confidence: confirmed
+    data: { type: System, key: deployer, name: 배포 시스템 }
+  - id: system.incident
+    kind: entity
+    owner: u1003
+    confidence: confirmed
+    data: { type: System, key: incident, name: 장애 관리 }
+  - id: group.PLT
+    kind: mapping
+    owner: u1003
+    confidence: confirmed
+    data: { concept: group, key: PLT, name: 플랫폼팀, value: G-PLT }
+  - id: group.PAY
+    kind: mapping
+    owner: u1003
+    confidence: confirmed
+    data: { concept: group, key: PAY, name: 결제팀, value: G-PAY }
+  - id: group.LIV
+    kind: mapping
+    owner: u1003
+    confidence: confirmed
+    data: { concept: group, key: LIV, name: 라이브운영팀, value: G-LIV }
+  - id: group.DAT
+    kind: mapping
+    owner: u1003
+    confidence: confirmed
+    data: { concept: group, key: DAT, name: 데이터팀, value: G-DAT }

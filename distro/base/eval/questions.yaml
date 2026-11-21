@@ -1,0 +1,29 @@
+questions:
+  - id: q.access.deployer
+    taskType: access.grant
+    body: 김민준님에게 배포 시스템 배포자 권한 부여 부탁드립니다
+    expect: { system: iam, action: grant, params: { uid: u1001, sys: deployer, role_cd: DP } }
+  - id: q.access.incident-reader
+    taskType: access.grant
+    body: 이서연님에게 장애 관리 조회 권한 부여 부탁드립니다
+    expect: { system: iam, action: grant, params: { uid: u1006, sys: incident, role_cd: RO } }
+  - id: q.access.admin
+    taskType: access.grant
+    body: 박도윤님에게 계정 시스템 관리자 권한 부여 부탁드립니다
+    expect: { system: iam, action: grant, params: { uid: u1011, sys: iam, role_cd: AD } }
+  - id: q.deploy.staging
+    taskType: deploy.release
+    body: pay-api v1.2.3 스테이징 배포 요청합니다
+    expect: { system: deployer, action: release, params: { svc: pay-api, ver: v1.2.3, env: S } }
+  - id: q.deploy.prod
+    taskType: deploy.release
+    body: live-gateway v2.0.1 운영 배포 요청합니다
+    expect: { system: deployer, action: release, params: { svc: live-gateway, ver: v2.0.1, env: P } }
+  - id: q.incident.urgent
+    taskType: incident.open
+    body: pay-api 장애 접수합니다. 심각도 긴급
+    expect: { system: incident, action: open, params: { svc: pay-api, sev: S1, grp: G-PAY } }
+  - id: q.incident.normal
+    taskType: incident.open
+    body: data-mart 장애 접수합니다. 심각도 보통
+    expect: { system: incident, action: open, params: { svc: data-mart, sev: S3, grp: G-DAT } }

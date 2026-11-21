@@ -31,6 +31,7 @@ export type ExecutionResult = {
   ok: boolean
   reason?: string
   actions: ExecutedAction[]
+  knowledgeUsed: string[]
   result: JsonObject
   turns: number
   tokens: number
@@ -63,6 +64,7 @@ const invalid = (tool: string): ToolResult => ({
 export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): Promise<ExecutionResult> => {
   const { task } = input
   let actions: ExecutedAction[] = []
+  let lookedUp: string[] = []
   let tokens = 0
   let turns = 0
   let errorCounts: Record<string, number> = {}
@@ -70,7 +72,9 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
   const tools: ToolHost = {
     call: async ({ tool, input: args }) => {
       if (tool === 'knowledge.lookup') {
-        return { status: 'ok', output: { entries: await deps.lookup(args, task) } }
+        const entries = await deps.lookup(args, task)
+        lookedUp = [...lookedUp, ...entries.map((entry) => entry.id)]
+        return { status: 'ok', output: { entries } }
       }
       const { system, resource, action, where, params } = args
       if (tool === 'domain.query') {
@@ -119,6 +123,7 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
     ok,
     ...(reason ? { reason } : {}),
     actions,
+    knowledgeUsed: [...new Set([...input.knowledge.map((entry) => entry.id), ...lookedUp])],
     result,
     turns,
     tokens,

@@ -1,0 +1,34 @@
+entries:
+  - id: taskType.deploy.release
+    kind: entity
+    owner: u1002
+    confidence: confirmed
+    data:
+      type: TaskType
+      domain: deploy
+      taskType: deploy.release
+      description: 서비스 배포
+      aliases: [배포 요청, 배포]
+      risk: high
+  - id: taskType.incident.open
+    kind: entity
+    owner: u1003
+    confidence: confirmed
+    data:
+      type: TaskType
+      domain: incident
+      taskType: incident.open
+      description: 장애 접수
+      aliases: [장애 접수, 장애]
+      risk: medium
+  - id: taskType.access.grant
+    kind: entity
+    owner: u1001
+    confidence: confirmed
+    data:
+      type: TaskType
+      domain: access
+      taskType: access.grant
+      description: 권한 부여
+      aliases: [권한 부여, 권한]
+      risk: medium

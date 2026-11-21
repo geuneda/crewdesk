@@ -1,13 +1,5 @@
-import type {
-  ActionType,
-  CatalogItem,
-  Domain,
-  DomainAction,
-  JsonObject,
-  KnowledgeEntry,
-  OutboundMessage,
-  Task,
-} from '@crewdesk/core'
+import type { Domain, DomainAction, JsonObject, OutboundMessage, Task } from '@crewdesk/core'
+import { actionTypesOf, catalogOf, fragmentFor, type KnowledgeBase, lookup } from '@crewdesk/knowledge'
 import { companyActions } from './company/actions.ts'
 import { buildCompanyDb } from './company/data.ts'
 import { companyScript } from './company/scripts.ts'
@@ -32,9 +24,8 @@ export type SimConfig = {
   latencyMs: { min: number; max: number }
   failureRate: number
   events: SimEvent[]
-  knowledge: KnowledgeEntry[]
-  catalog: CatalogItem[]
-  actionTypes: ActionType[]
+  kb: KnowledgeBase
+  knowledgeEnabled: boolean
   tokens: TokenModel
 }
 
@@ -56,6 +47,7 @@ export const defaultSimConfig = {
   latencyMs: { min: 2000, max: 20000 },
   failureRate: 0.01,
   events: [],
+  knowledgeEnabled: true,
   tokens: defaultTokenModel,
 } satisfies Partial<SimConfig>
 
@@ -82,14 +74,14 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
   const desk = createDesk({
     store,
     queueFor: (domain) => queues[domain] ?? createMemoryQueue<Task>(),
-    knowledgeFor: (task) => config.knowledge.filter((entry) => entry.taskTypes.includes(task.taskType)),
+    knowledgeFor: (task) => (config.knowledgeEnabled ? fragmentFor(config.kb, task.taskType) : []),
     workModel: () => 'medium',
     intake: {
       channel,
       model,
       store,
       clock,
-      catalog: () => config.catalog,
+      catalog: () => catalogOf(config.kb),
       models: { cheap: 'small', strong: 'medium' },
       confidenceThreshold: 0.7,
       budget: { tokens: 60000, turns: 12, subagents: 0 },
@@ -100,13 +92,7 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       runtime,
       systems,
       clock,
-      lookup: async (input) =>
-        config.knowledge.filter(
-          (entry) =>
-            entry.data.concept === input.concept &&
-            (input.key === undefined || entry.data.key === input.key) &&
-            (input.scope === undefined || entry.data.scope === input.scope),
-        ),
+      lookup: async (input) => (config.knowledgeEnabled ? lookup(config.kb, input) : []),
       recordUsage,
       retryDelayMs: MINUTE,
     },
@@ -116,7 +102,7 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       store,
       clock,
       systems,
-      actionTypes: () => config.actionTypes,
+      actionTypes: () => actionTypesOf(config.kb),
       replyModel: 'small',
       recordUsage,
     },

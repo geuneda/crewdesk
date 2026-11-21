@@ -8,7 +8,9 @@
   },
   "dependencies": {
     "@crewdesk/core": "workspace:*",
+    "@crewdesk/eval": "workspace:*",
     "@crewdesk/intake": "workspace:*",
+    "@crewdesk/knowledge": "workspace:*",
     "@crewdesk/runtime": "workspace:*"
   }
 }

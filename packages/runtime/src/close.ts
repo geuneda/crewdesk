@@ -65,7 +65,7 @@ export const closeTask = async (
     taskId: task.id,
     agent: input.agent,
     model: input.model,
-    knowledge: input.knowledge.map((entry) => entry.id),
+    knowledge: execution.knowledgeUsed,
     actions: execution.actions,
     verified,
     ok,
