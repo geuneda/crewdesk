@@ -208,3 +208,37 @@ test('a denied action is not executed', async () => {
   expect(seen).toEqual([expect.objectContaining({ status: 'error', code: 'ACTION_NOT_PERMITTED' })])
   expect(executed).toHaveLength(0)
 })
+
+test('only knowledge whose value an executed action carried counts as applied', async () => {
+  const entry = (id: string, value: string) => ({
+    id,
+    kind: 'mapping' as const,
+    owner: 'u1',
+    confidence: 'confirmed' as const,
+    taskTypes: [],
+    data: { value },
+  })
+  const carried: string[][] = []
+  const { deps } = depsFor(
+    runtimeOf(async function* (_, tools) {
+      await tools.call({
+        ...grant,
+        input: { system: 'iam', action: 'grant', params: { uid: 'u1', role_cd: 'RO' } },
+      })
+      yield { type: 'done', ok: true, result: {} }
+    }),
+  )
+  const result = await executeTask(
+    {
+      ...deps,
+      authorize: async (_, __, entries) => {
+        carried.push(entries.map((item) => item.id))
+        return { status: 'allow' }
+      },
+    },
+    { ...input, knowledge: [entry('reader', 'RO'), entry('admin', 'AD')] },
+  )
+  expect(carried).toEqual([['reader']])
+  expect(result.knowledgeUsed).toEqual(['reader', 'admin'])
+  expect(result.knowledgeApplied).toEqual(['reader'])
+})

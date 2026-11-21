@@ -1,4 +1,5 @@
 import type { ChannelPort, JsonObject, Task } from '@crewdesk/core'
+import type { Placement } from '@crewdesk/ops'
 import { expect, test } from 'vitest'
 import { createDesk } from './desk.ts'
 import { createMemoryChannel } from './dummies/channel.ts'
@@ -10,7 +11,10 @@ import { createScriptedRuntime, defaultTokenModel } from './dummies/runtime.ts'
 import { createSqliteStore } from './dummies/store.ts'
 import { createMemorySystems } from './dummies/systems.ts'
 
-const setup = (wrap: (channel: ChannelPort) => ChannelPort = (channel) => channel) => {
+const setup = (
+  wrap: (channel: ChannelPort) => ChannelPort = (channel) => channel,
+  place: (now: number) => Placement = () => ({ kind: 'run', seat: 'seat-deploy', exclusive: true }),
+) => {
   const clock = createVirtualClock()
   const store = createSqliteStore()
   const memory = createMemoryChannel()
@@ -37,7 +41,7 @@ const setup = (wrap: (channel: ChannelPort) => ChannelPort = (channel) => channe
     queueFor: () => queue,
     knowledgeFor: async () => [],
     workModel: () => 'medium',
-    place: () => ({ kind: 'run', seat: 'seat-deploy', exclusive: true }),
+    place: () => place(clock.now()),
     onPlaced: () => {},
     onFinished: () => {},
     onError: (error) => void errors.push(error),
@@ -164,4 +168,30 @@ test('a failure while closing one task is reported and does not block the next',
   expect(errors).toHaveLength(1)
   expect(await store.get('task', 'task-m1')).toMatchObject({ status: 'escalated' })
   expect(await store.get('task', 'task-m2')).toMatchObject({ status: 'done' })
+})
+
+test('a task that waited for the seat is placed again when it gets the seat', async () => {
+  let finished = 0
+  const { clock, store, send } = setup(
+    (channel) => ({
+      ...channel,
+      send: async (message) => {
+        if (message.body.includes('처리했습니다')) finished += 1
+        await channel.send(message)
+      },
+    }),
+    (now) =>
+      finished >= 1 && now < 60_000
+        ? { kind: 'wait', until: 60_000 }
+        : { kind: 'run', seat: 'seat-deploy', exclusive: true },
+  )
+  void send('m1', 'pay-api 배포')
+  void send('m2', 'pay-batch 배포')
+  await clock.runUntil(30_000)
+  expect(await store.get('task', 'task-m1')).toMatchObject({ status: 'done' })
+  expect(await store.get('task', 'task-m2')).toMatchObject({ status: 'queued' })
+  await clock.runUntil(Number.POSITIVE_INFINITY)
+  const trace = await store.get('trace', 'task-m2')
+  expect(trace).toMatchObject({ ok: true })
+  expect(Number(trace?.closedAt)).toBeGreaterThanOrEqual(60_000)
 })

@@ -101,7 +101,7 @@ test('a fix the owner rejects is shown as rejected, not as pending', () => {
     result.discrepancies,
     result.knowledgeProposals,
     [],
-    [{ entryId, field }],
+    [{ entryId, field, from: first.change.split(' -> ')[0] ?? '' }],
   )
   expect(rejected[0]?.rejected).toBe(true)
   expect(renderStalenessReport(rejected)).toContain('담당자 반려')
@@ -145,4 +145,75 @@ test('a system change touches only entries sourced from that column, and questio
     ),
   ).toEqual(followed.filter((question) => question.expect.params.env !== 'PR'))
   expect(reportsFromChange(parseKnowledge([]), event, 9)).toEqual([])
+})
+
+const role = (from: string, to: string, at: number) => ({ ...codeChange, at, from, to })
+
+test('two changes before one batch run propose the final value, not the abandoned one', async () => {
+  const chained = await runSimulation({
+    ...defaultSimConfig,
+    days: 5,
+    approvals: { ...defaultSimConfig.approvals, rejectRate: 0 },
+    events: [role('DP', 'DV', 2 * DAY + 10 * HOUR), role('DV', 'DX', 2 * DAY + 15 * HOUR)],
+  })
+  expect(chained.knowledgeChanges).toEqual([expect.objectContaining({ from: 'DP', to: 'DX' })])
+  expect(chained.kb.entries.find((entry) => entry.id === 'role.deployer.deployer')?.data.value).toBe('DX')
+})
+
+test('the same field going stale twice gives two rows in the report', async () => {
+  const twice = await runSimulation({
+    ...defaultSimConfig,
+    days: 12,
+    approvals: { ...defaultSimConfig.approvals, rejectRate: 0 },
+    events: [role('DP', 'DV', 2 * DAY + 10 * HOUR), role('DV', 'DX', 8 * DAY + 10 * HOUR)],
+  })
+  const timeline = stalenessTimeline(twice.discrepancies, twice.knowledgeProposals, twice.knowledgeChanges)
+  expect(timeline.map((item) => item.change)).toEqual(['DP -> DV', 'DV -> DX'])
+  expect(timeline.every((item) => item.fixedAt !== null && item.fixedAt > item.staleAt)).toBe(true)
+})
+
+test('knowledge changes still need a human when task approvals are switched off', async () => {
+  const unattended = await runSimulation({
+    ...defaultSimConfig,
+    days: 16,
+    approvals: { ...defaultSimConfig.approvals, enabled: false, rejectRate: 0 },
+    events: [approverChange],
+  })
+  expect(unattended.gates).toEqual([
+    expect.objectContaining({ actionType: 'knowledge.patchRelation', human: true, level: 'always' }),
+  ])
+  expect(unattended.knowledgeChanges).toHaveLength(1)
+})
+
+test('without eval questions a fix is left unresolved instead of passing an empty eval', async () => {
+  const blind = await runSimulation({ ...defaultSimConfig, days: 5, questions: [], events: [codeChange] })
+  expect(blind.knowledgeProposals).toEqual([])
+  expect(blind.knowledgeChanges).toEqual([])
+})
+
+test('eval runs inside the batch are in the usage ledger and the knowledge log', () => {
+  expect(result.usage.some((record) => record.stage === 'eval' && record.taskId.startsWith('eval-'))).toBe(
+    true,
+  )
+  expect(
+    result.knowledgeUse.some((use) => String(use.taskId).startsWith('eval-') && use.via === 'lookup'),
+  ).toBe(true)
+})
+
+test('a code missing in one scope is reported only for the entry of that scope', () => {
+  const used = kb.entries.filter((entry) => entry.data.concept === 'role')
+  const error = {
+    code: 'UNKNOWN_CODE',
+    message: '',
+    detail: {
+      system: 'iam',
+      resource: 'role_codes',
+      field: 'cd',
+      value: 'RO',
+      where: { sys: 'deployer', cd: 'RO' },
+    },
+  }
+  const reports = detectDiscrepancies(used, error, 't1', 5)
+  expect(reports.map((report) => report.entryId)).toEqual(['role.deployer.reader'])
+  expect(parseEvidence(reports[0]?.evidence ?? '')?.query.where).toEqual({ sys: 'deployer', cd: 'RO' })
 })

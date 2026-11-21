@@ -44,14 +44,16 @@ const key = 'sys="deployer"&role_cd="DP"'
 
 const setup = (options: { human?: boolean } = {}) => {
   let now = 0
-  let failAppend = false
+  let failAppend: string | false = false
+  let slow: Promise<void> | null = null
   const opened: PendingApproval[] = []
   const stored: Record<string, JsonObject[]> = {}
   const notified: string[] = []
   const desk = createApprovalDesk({
     store: {
       append: async (kind, record) => {
-        if (failAppend && kind === 'approval') throw new Error('store down')
+        if (kind === 'ruleChange' && slow) await slow
+        if (failAppend === kind) throw new Error('store down')
         stored[kind] = [...(stored[kind] ?? []), record]
       },
       put: async () => {},
@@ -109,8 +111,11 @@ const setup = (options: { human?: boolean } = {}) => {
     approveRules,
     promoteTo,
     tick,
-    breakStore: (broken: boolean) => {
-      failAppend = broken
+    breakStore: (broken: boolean, kind = 'approval') => {
+      failAppend = broken ? kind : false
+    },
+    slowRuleChanges: (gate: Promise<void> | null) => {
+      slow = gate
     },
   }
 }
@@ -270,4 +275,55 @@ test('a modified approval or a rejected rule proposal restarts the streak', () =
   expect(proposePromotions([grant], [], [record(1), record(2, true), record(3)], () => -1)).toEqual([])
   expect(proposePromotions([grant], [], [record(1), record(2), record(3)], () => 2)).toEqual([])
   expect(proposePromotions([grant], [], [record(1, true), record(2), record(3)], () => -1)).toHaveLength(1)
+})
+
+test('a promotion approved while a demotion is being saved does not override it', async () => {
+  const { desk, run, promoteTo, tick, slowRuleChanges } = setup()
+  await promoteTo('recommend')
+  await run('s1')
+  await run('s2')
+  tick()
+  desk.proposePromotions()
+  let open = () => {}
+  slowRuleChanges(
+    new Promise<void>((resolve) => {
+      open = resolve
+    }),
+  )
+  const demotion = desk.reportIncident(action)
+  const promotions = desk
+    .pending()
+    .map((item) => desk.decide(item.id, { approver: item.approver, decision: 'approved' }))
+  open()
+  slowRuleChanges(null)
+  await Promise.all([demotion, ...promotions])
+  expect(desk.rules()[0]?.level).toBe('always')
+})
+
+test('a cautious call at auto is recorded and announced as notify', async () => {
+  const { desk, promoteTo, notified, stored, tick } = setup()
+  await promoteTo('auto')
+  notified.length = 0
+  tick()
+  const actor = { ...task, id: 'c1' }
+  expect(await desk.authorize(actor, action, true)).toEqual({ status: 'allow' })
+  await desk.recordExecution(actor, action, true)
+  expect(stored.gate?.at(-1)).toMatchObject({ taskId: 'c1', level: 'notify', human: false })
+  expect(stored.approval?.at(-1)).toMatchObject({ taskId: 'c1', level: 'notify', approver: 'policy' })
+  expect(notified).toEqual(['lead-access'])
+})
+
+test('a rejection whose demotion could not be saved is not recorded twice on retry', async () => {
+  const { desk, promoteTo, breakStore, stored, tick } = setup()
+  await promoteTo('recommend')
+  tick()
+  const permit = await desk.authorize({ ...task, id: 'r1' }, action)
+  if (permit.status !== 'pending') throw new Error('expected pending')
+  const reject = { approver: 'lead-access', decision: 'rejected' as const }
+  breakStore(true, 'ruleChange')
+  await expect(desk.decide(permit.approvalId, reject)).rejects.toThrow(/store down/)
+  breakStore(false)
+  await desk.decide(permit.approvalId, reject)
+  expect(stored.approval?.filter((record) => record.taskId === 'r1')).toHaveLength(1)
+  expect(desk.rules()[0]?.level).toBe('always')
 })

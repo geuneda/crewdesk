@@ -51,12 +51,14 @@ export type ApprovalDeskDeps = {
   actionTypes(): ActionType[]
   approverFor(type: ActionType, action: DomainAction): string
   roleOf(person: string): string
-  humanApproval(): boolean
+  humanApproval(type: ActionType): boolean
   onPending(pending: PendingApproval): void
   notify(approver: string, text: string): Promise<void>
 }
 
 const POLICY = 'policy'
+
+type Gate = { id: string; level: ApprovalLevel; conditionKey: string }
 const ruleKey = (actionType: string, conditionKey: string) => `${actionType}|${conditionKey}`
 
 export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
@@ -65,7 +67,9 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
   let pending: PendingApproval[] = []
   let ruleDecidedAt: Record<string, number> = {}
   let seq = 0
-  const gateOfCall = new Map<string, Map<string, string>>()
+  let ruleTail: Promise<unknown> = Promise.resolve()
+  const gateOfCall = new Map<string, Map<string, Gate>>()
+  const recorded = new Set<string>()
   const decided = new Map<string, 'approved' | 'rejected'>()
   const waiters = new Map<string, (() => void)[]>()
   const deciding = new Set<string>()
@@ -95,12 +99,21 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
     markRuleDecided(rule.actionType, rule.conditionKey)
   }
 
-  const demote = async (actionType: string, conditionKey: string, cause: string) => {
-    const type = typeOf(actionType)
-    if (!type) return
-    const from = levelOf(type, conditionKey, rules)
-    if (demoted(from) !== from) await setRule({ actionType, conditionKey, level: demoted(from) }, from, cause)
+  const inOrder = <T>(change: () => Promise<T>): Promise<T> => {
+    const run = ruleTail.then(change)
+    ruleTail = run.catch(() => {})
+    return run
   }
+
+  const demote = (actionType: string, conditionKey: string, cause: string) =>
+    inOrder(async () => {
+      const type = typeOf(actionType)
+      if (!type) return
+      const from = levelOf(type, conditionKey, rules)
+      if (demoted(from) !== from) {
+        await setRule({ actionType, conditionKey, level: demoted(from) }, from, cause)
+      }
+    })
 
   const open = (item: PendingApproval) => {
     pending = [...pending, item]
@@ -110,29 +123,35 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
   const settle = async (item: PendingApproval, decision: Decision) => {
     if (item.kind === 'rule') {
       const { actionType, conditionKey, from, to } = item.proposal
-      const type = typeOf(actionType)
-      const stillValid = type !== undefined && levelOf(type, conditionKey, rules) === from
-      if (decision.decision === 'approved' && stillValid) {
-        await setRule({ actionType, conditionKey, level: to }, from, 'promotion')
-      } else {
-        markRuleDecided(actionType, conditionKey)
-      }
+      await inOrder(async () => {
+        const type = typeOf(actionType)
+        const stillValid = type !== undefined && levelOf(type, conditionKey, rules) === from
+        if (decision.decision === 'approved' && stillValid) {
+          await setRule({ actionType, conditionKey, level: to }, from, 'promotion')
+        } else {
+          markRuleDecided(actionType, conditionKey)
+        }
+      })
       return
     }
-    await record({
-      actionType: item.actionType,
-      conditionKey: item.conditionKey,
-      requesterRole: item.requesterRole,
-      approver: decision.approver,
-      decision: decision.decision,
-      modified: decision.modified ?? false,
-      decidedInMs: deps.clock.now() - item.requestedAt,
-      decidedAt: deps.clock.now(),
-      level: item.level,
-      taskId: item.taskId,
-      ...(decision.reason ? { reason: decision.reason } : {}),
-    })
+    if (!recorded.has(item.id)) {
+      await record({
+        actionType: item.actionType,
+        conditionKey: item.conditionKey,
+        requesterRole: item.requesterRole,
+        approver: decision.approver,
+        decision: decision.decision,
+        modified: decision.modified ?? false,
+        decidedInMs: deps.clock.now() - item.requestedAt,
+        decidedAt: deps.clock.now(),
+        level: item.level,
+        taskId: item.taskId,
+        ...(decision.reason ? { reason: decision.reason } : {}),
+      })
+      recorded.add(item.id)
+    }
     if (decision.decision === 'rejected') await demote(item.actionType, item.conditionKey, 'rejection')
+    recorded.delete(item.id)
   }
 
   return {
@@ -148,23 +167,26 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
           message: `${task.domain} agent may not run ${action.system}.${action.action}`,
         }
       }
-      if (!deps.humanApproval()) return { status: 'allow' }
+      if (!deps.humanApproval(type)) return { status: 'allow' }
       const actionKey = canonicalJson(action)
       const gate = gateOfCall.get(task.id)?.get(actionKey)
-      if (gate === POLICY) return { status: 'allow' }
+      if (gate?.id === POLICY) return { status: 'allow' }
       if (gate) {
-        const outcome = decided.get(gate)
+        const outcome = decided.get(gate.id)
         if (outcome === 'approved') return { status: 'allow' }
         if (outcome === 'rejected') {
           return { status: 'denied', code: 'APPROVAL_REJECTED', message: 'the approver rejected this action' }
         }
-        return { status: 'pending', approvalId: gate }
+        return { status: 'pending', approvalId: gate.id }
       }
       const conditionKey = conditionKeyOf(type, action.params)
       const level = cautious ? demoted(levelFor(type, action)) : levelFor(type, action)
       const human = needsHuman(level)
       const id = human ? `ap-${++seq}` : POLICY
-      gateOfCall.set(task.id, new Map([...(gateOfCall.get(task.id) ?? []), [actionKey, id]]))
+      gateOfCall.set(
+        task.id,
+        new Map([...(gateOfCall.get(task.id) ?? []), [actionKey, { id, level, conditionKey }]]),
+      )
       await deps.store.append('gate', {
         taskId: task.id,
         actionType: type.id,
@@ -191,9 +213,9 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
 
     recordExecution: async (task: Task, action: DomainAction, ok: boolean): Promise<void> => {
       const type = typeFor(task, action)
-      if (!type || !ok || gateOfCall.get(task.id)?.get(canonicalJson(action)) !== POLICY) return
-      const conditionKey = conditionKeyOf(type, action.params)
-      const level = levelFor(type, action)
+      const gate = gateOfCall.get(task.id)?.get(canonicalJson(action))
+      if (!type || !ok || gate?.id !== POLICY) return
+      const { level, conditionKey } = gate
       await record({
         actionType: type.id,
         conditionKey,
@@ -241,7 +263,7 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
     },
 
     forget: (taskId: string): void => {
-      for (const gate of gateOfCall.get(taskId)?.values() ?? []) decided.delete(gate)
+      for (const gate of gateOfCall.get(taskId)?.values() ?? []) decided.delete(gate.id)
       gateOfCall.delete(taskId)
     },
 

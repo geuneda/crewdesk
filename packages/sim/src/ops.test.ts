@@ -3,7 +3,7 @@ import { loadBaseKnowledge } from './company/base.ts'
 import { withWindows } from './company/ops.ts'
 import { defaultSimConfig, runSimulation, type SimConfig } from './engine.ts'
 import { renderBreakEvenReport, renderCostReport, runBreakEven, runCostComparison } from './reports/cost.ts'
-import { DAY, HOUR } from './time.ts'
+import { HOUR } from './time.ts'
 
 const config: SimConfig = {
   ...defaultSimConfig,
@@ -50,10 +50,13 @@ test('report 4: each optimisation step lowers the cost per task', async () => {
   expect(renderCostReport(steps)).toContain('기준 대비')
 })
 
-test('report 6: seats win only above a break-even volume', async () => {
-  const rows = await runBreakEven({ ...config, days: 7 }, [20, 640], 100)
-  expect(rows.map((row) => row.cheaper)).toEqual(['metered', 'seat'])
-  expect(rows[1]?.parkedTasks).toBeGreaterThan(0)
-  expect(renderBreakEvenReport(rows, 100, 7)).toContain('손익분기점: 하루 요청 640건')
-  expect(DAY).toBe(24 * HOUR)
+test('report 6: seats win only above a break-even volume, and are not compared when they do less work', async () => {
+  const rows = await runBreakEven({ ...config, days: 7 }, [20, 320, 640], 100)
+  expect(rows.map((row) => row.cheaper)).toEqual(['metered', 'seat', 'incomparable'])
+  expect(rows[1]?.tasks).toBe(rows[1]?.meteredTasks)
+  expect(rows[2]?.parkedTasks).toBeGreaterThan(0)
+  expect(rows[2]?.tasks).toBeLessThan(rows[2]?.meteredTasks ?? 0)
+  const report = renderBreakEvenReport(rows, 100, 7)
+  expect(report).toContain('손익분기점: 하루 요청 320건')
+  expect(report).toContain('비교 불가')
 })

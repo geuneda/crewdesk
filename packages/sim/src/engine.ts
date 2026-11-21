@@ -156,7 +156,7 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
     actionTypes: () => actionTypesOf(kb),
     approverFor: (type, action) => approverOf(kb, type, action.params),
     roleOf: (uid) => (people.find((person) => person.uid === uid)?.lead ? 'lead' : 'member'),
-    humanApproval: () => config.approvals.enabled,
+    humanApproval: (type) => config.approvals.enabled || type.domain === 'knowledge',
     onPending: (pending) => void approve(pending).catch(onError),
     notify: (approver, text) =>
       channel.send({ channel: `dm-${approver}`, thread: 'approvals', body: text, at: clock.now() }),
@@ -220,11 +220,11 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       clock,
       lookup: knowledge.lookup,
       recordUsage,
-      authorize: (task, action, used) =>
+      authorize: (task, action, carried) =>
         approvals.authorize(
           task,
           action,
-          used.some((entry) => knowledge.isStale(entry.id, config.staleAfterMs)),
+          carried.some((entry) => knowledge.isStale(entry.id, config.staleAfterMs)),
         ),
       onDomainError: async (task, error, used) => {
         for (const report of detectDiscrepancies(used, error, task.id, clock.now())) {

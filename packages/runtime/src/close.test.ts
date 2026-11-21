@@ -63,6 +63,7 @@ const run = async (params: JsonObject, rows: JsonObject[]) => {
       ok: true,
       actions: [{ action, result: { ok: true, value: {} } }],
       knowledgeUsed: [],
+      knowledgeApplied: [],
       result: {},
       turns: 1,
       tokens: 1,

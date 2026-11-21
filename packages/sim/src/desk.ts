@@ -92,19 +92,28 @@ export const createDesk = (deps: DeskDeps) => {
     }
   }
 
-  const start = async (task: Task) => {
-    const placement = deps.place(task)
-    if (placement.kind === 'wait') {
-      parked = { ...parked, [task.domain]: [...(parked[task.domain] ?? []), task] }
-      return placement.until
-    }
-    deps.onPlaced(task, placement.seat)
-    if (placement.exclusive) {
-      exclusive = new Set([...exclusive, task.id])
-      await acquire(task)
-    }
+  const park = (task: Task, until: number) => {
+    parked = { ...parked, [task.domain]: [...(parked[task.domain] ?? []), task] }
+    return until
+  }
+
+  const run = (task: Task, seat: string) => {
+    deps.onPlaced(task, seat)
     void work(task)
     return null
+  }
+
+  const start = async (task: Task) => {
+    const placement = deps.place(task)
+    if (placement.kind === 'wait') return park(task, placement.until)
+    if (!placement.exclusive) return run(task, placement.seat)
+    exclusive = new Set([...exclusive, task.id])
+    await acquire(task)
+    const current = deps.place(task)
+    if (current.kind === 'run' && current.seat === placement.seat) return run(task, current.seat)
+    release(task)
+    exclusive = new Set([...exclusive].filter((taskId) => taskId !== task.id))
+    return current.kind === 'wait' ? park(task, current.until) : run(task, current.seat)
   }
 
   const wakeLater = (domain: Domain, until: number) => {

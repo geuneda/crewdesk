@@ -53,14 +53,17 @@ export const createLearning = (deps: LearningDeps) =>
     model: deps.model,
     onError: deps.onError,
     evaluate: async (candidate, change) => {
+      if (deps.questions().length === 0) return null
       const report = await runEval({
         questions: change ? followChange(deps.kb(), deps.questions(), change) : deps.questions(),
         kb: candidate,
-        agent: createScriptedEvalAgent(candidate, deps.systems.snapshot(), deps.clock),
+        agent: createScriptedEvalAgent(candidate, deps.systems.snapshot(), deps.clock, deps.recordUsage),
         cache: deps.store,
         promptVersion: 'sim',
         model: deps.model,
         environment: String((await deps.systems.changes(0)).length),
+        audit: ({ questionId, ...use }) =>
+          deps.store.append('knowledgeUse', { taskId: `eval-${questionId}`, ...use, at: deps.clock.now() }),
       })
       return report.accuracy
     },

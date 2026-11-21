@@ -16,12 +16,19 @@ const fail = (code: string, message: string, detail?: JsonObject): ActionOutcome
 const has = (list: JsonObject[], match: JsonObject) =>
   list.some((row) => Object.entries(match).every(([key, value]) => row[key] === value))
 
-const unknownCode = (system: string, resource: string, field: string, value: unknown) =>
+const unknownCode = (
+  system: string,
+  resource: string,
+  field: string,
+  value: unknown,
+  scope: JsonObject = {},
+) =>
   fail('UNKNOWN_CODE', `${system} does not know ${field}=${String(value)}`, {
     system,
     resource,
     field,
     value: String(value),
+    where: { ...scope, [field]: String(value) },
   })
 
 const add = (db: Db, system: string, resource: string, row: JsonObject, kind: string): ActionOutcome => ({
@@ -38,7 +45,7 @@ const grant: ActionHandler = (db, { uid, sys, role_cd }) => {
     return fail('NOT_FOUND', `no active account ${String(uid)}`, { field: 'uid', value: String(uid) })
   }
   if (!has(rows(db, 'iam', 'role_codes'), { sys: sys ?? null, cd: role_cd ?? null })) {
-    return unknownCode('iam', 'role_codes', 'cd', role_cd)
+    return unknownCode('iam', 'role_codes', 'cd', role_cd, { sys: String(sys) })
   }
   return add(db, 'iam', 'grants', { uid: uid ?? null, sys: sys ?? null, role_cd: role_cd ?? null }, 'granted')
 }

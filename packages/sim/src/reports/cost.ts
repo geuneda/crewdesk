@@ -79,13 +79,14 @@ export const renderCostReport = (steps: CostStep[]): string => {
 
 export type BreakEvenRow = {
   requestsPerDay: number
+  meteredTasks: number
   tasks: number
   meteredUsd: number
   seatUsd: number
   seatFeesUsd: number
   overflowUsd: number
   parkedTasks: number
-  cheaper: 'metered' | 'seat'
+  cheaper: 'metered' | 'seat' | 'incomparable'
 }
 
 export const runBreakEven = async (
@@ -104,17 +105,21 @@ export const runBreakEven = async (
       const seatUsd = usd(seated.usage) + fees
       return {
         requestsPerDay,
+        meteredTasks: closed(metered),
         tasks: closed(seated),
         meteredUsd: round(meteredUsd, 2),
         seatUsd: round(seatUsd, 2),
         seatFeesUsd: round(fees, 2),
         overflowUsd: round(usd(seated.usage.filter((record) => record.seat === 'seat-overflow')), 2),
         parkedTasks: new Set(seated.parked.map((entry) => entry.taskId)).size,
-        cheaper: seatUsd < meteredUsd ? 'seat' : 'metered',
+        cheaper:
+          closed(seated) < closed(metered) * 0.98 ? 'incomparable' : seatUsd < meteredUsd ? 'seat' : 'metered',
       }
     }),
   )
 }
+
+const verdict = { seat: '좌석제', metered: '종량제', incomparable: '비교 불가(좌석제가 덜 처리함)' }
 
 export const renderBreakEvenReport = (rows: BreakEvenRow[], seatMonthlyUsd: number, days: number): string => {
   const point = rows.find((row) => row.cheaper === 'seat')
@@ -123,12 +128,13 @@ export const renderBreakEvenReport = (rows: BreakEvenRow[], seatMonthlyUsd: numb
     '',
     `기간은 시뮬레이션 ${days}일이다. 좌석 요금은 좌석당 월 ${seatMonthlyUsd}달러로 가정했다. 가격과 한도는 가짜 값이다.`,
     '접수와 마감 회신은 두 구성 모두 종량제다. 좌석제에서 한도가 차면 긴급 업무는 종량제로 넘어가고 나머지는 대기한다.',
+    '좌석제가 기간 안에 마감한 업무가 종량제의 98% 미만이면 비용을 직접 비교하지 않는다.',
     '',
-    '| 하루 요청 | 마감 업무 | 전부 종량제(USD) | 좌석제 합계(USD) | 좌석 요금 | 넘친 종량제 비용 | 대기한 업무 | 더 싼 쪽 |',
-    '|---|---|---|---|---|---|---|---|',
+    '| 하루 요청 | 종량제 마감 | 좌석제 마감 | 전부 종량제(USD) | 좌석제 합계(USD) | 좌석 요금 | 넘친 종량제 비용 | 대기한 업무 | 더 싼 쪽 |',
+    '|---|---|---|---|---|---|---|---|---|',
     ...rows.map(
       (row) =>
-        `| ${row.requestsPerDay} | ${row.tasks} | ${row.meteredUsd} | ${row.seatUsd} | ${row.seatFeesUsd} | ${row.overflowUsd} | ${row.parkedTasks} | ${row.cheaper === 'seat' ? '좌석제' : '종량제'} |`,
+        `| ${row.requestsPerDay} | ${row.meteredTasks} | ${row.tasks} | ${row.meteredUsd} | ${row.seatUsd} | ${row.seatFeesUsd} | ${row.overflowUsd} | ${row.parkedTasks} | ${verdict[row.cheaper]} |`,
     ),
     '',
     point

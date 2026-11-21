@@ -42,6 +42,7 @@ export type ExecutionResult = {
   reason?: string
   actions: ExecutedAction[]
   knowledgeUsed: string[]
+  knowledgeApplied: string[]
   result: JsonObject
   turns: number
   tokens: number
@@ -75,7 +76,10 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
   const { task } = input
   let actions: ExecutedAction[] = []
   let lookedUp: KnowledgeEntry[] = []
+  let applied: string[] = []
   const used = () => [...input.knowledge, ...lookedUp]
+  const carriedBy = (action: DomainAction) =>
+    used().filter((entry) => Object.values(action.params).some((value) => value === entry.data.value))
   let tokens = 0
   let turns = 0
   let attempts = 1
@@ -108,11 +112,12 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
         const key = canonicalJson(request)
         const prior = actions.find((done) => done.result.ok && canonicalJson(done.action) === key)
         if (prior) return toToolResult(prior.result)
-        const permit = await deps.authorize(task, request, used())
+        const permit = await deps.authorize(task, request, carriedBy(request))
         if (permit.status === 'pending') return { status: 'approvalRequired', approvalId: permit.approvalId }
         if (permit.status === 'denied') return { status: 'error', code: permit.code, message: permit.message }
         const result = await deps.systems.execute(request)
         actions = [...actions, { action: request, result }]
+        if (result.ok) applied = [...applied, ...carriedBy(request).map((entry) => entry.id)]
         await deps.onExecuted(task, request, result.ok)
         if (!result.ok) await deps.onDomainError(task, result.error, used())
         return toToolResult(result)
@@ -146,6 +151,7 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
     ...(reason ? { reason } : {}),
     actions,
     knowledgeUsed: [...new Set(used().map((entry) => entry.id))],
+    knowledgeApplied: [...new Set(applied)],
     result,
     turns,
     tokens,

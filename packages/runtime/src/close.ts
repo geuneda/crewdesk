@@ -52,7 +52,7 @@ export const closeTask = async (
     succeeded.filter((_, index) => !checks[index]).map((done) => deps.reportIncident(done.action)),
   )
   const ok = execution.ok && verified
-  if (ok) await deps.markUsedOk(execution.knowledgeUsed)
+  if (ok) await deps.markUsedOk(execution.knowledgeApplied)
   const reason = execution.ok && !verified ? 'VERIFICATION_FAILED' : execution.reason
   const task: Task = { ...input.task, status: ok ? 'done' : 'escalated' }
   const reply = await deps.model.reply({

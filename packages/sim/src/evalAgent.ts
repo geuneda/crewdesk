@@ -1,4 +1,4 @@
-import type { ClockPort, Task } from '@crewdesk/core'
+import type { ClockPort, Task, UsageReport } from '@crewdesk/core'
 import type { EvalAgent } from '@crewdesk/eval'
 import { catalogOf, type KnowledgeBase } from '@crewdesk/knowledge'
 import { executeTask } from '@crewdesk/runtime'
@@ -11,7 +11,12 @@ import { createScriptedRuntime, defaultTokenModel } from './dummies/runtime.ts'
 import { createMemorySystems, type Db } from './dummies/systems.ts'
 
 export const createScriptedEvalAgent =
-  (kb: KnowledgeBase, db: Db = buildCompanyDb(), shared?: ClockPort): EvalAgent =>
+  (
+    kb: KnowledgeBase,
+    db: Db = buildCompanyDb(),
+    shared?: ClockPort,
+    recordUsage: (report: UsageReport) => Promise<void> = async () => {},
+  ): EvalAgent =>
   async (question, knowledge, model) => {
     const own = shared ? undefined : createVirtualClock()
     const clock = shared ?? own ?? createVirtualClock()
@@ -44,7 +49,7 @@ export const createScriptedEvalAgent =
         systems: createMemorySystems({ db, actions: companyActions, clock }),
         clock,
         lookup: (query) => knowledge.lookup(query),
-        recordUsage: async () => {},
+        recordUsage: (report) => recordUsage({ ...report, stage: 'eval' }),
         authorize: async () => ({ status: 'allow' }),
         awaitDecision: async () => {},
         onExecuted: async () => {},

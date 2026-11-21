@@ -26,6 +26,12 @@ export type EvalOptions = {
   runs?: number
   force?: boolean
   environment?: string
+  audit?(use: {
+    questionId: string
+    via: 'fragment' | 'lookup'
+    query: JsonObject
+    entryIds: string[]
+  }): Promise<void>
 }
 
 export type QuestionResult = { id: string; pass: boolean; cached: boolean; usedEntryIds: string[] }
@@ -97,12 +103,24 @@ const runQuestion = async (options: EvalOptions, question: Question) => {
     Array.from({ length: runsOf(options) }, async () => {
       let lookups: JsonObject[] = []
       let found: string[] = []
+      await options.audit?.({
+        questionId: question.id,
+        via: 'fragment',
+        query: { taskType: question.taskType },
+        entryIds: fragment.map((entry) => entry.id),
+      })
       const { actions } = await options.agent(
         question,
         {
           fragment,
           lookup: async (query) => {
             const entries = lookup(options.kb, query)
+            await options.audit?.({
+              questionId: question.id,
+              via: 'lookup',
+              query,
+              entryIds: entries.map((entry) => entry.id),
+            })
             lookups = [...lookups, query]
             found = [...found, ...entries.map((entry) => entry.id)]
             return entries
@@ -126,6 +144,7 @@ const runQuestion = async (options: EvalOptions, question: Question) => {
 }
 
 export const runEval = async (options: EvalOptions): Promise<EvalReport> => {
+  runsOf(options)
   const results = await Promise.all(
     options.questions.map(async (question): Promise<QuestionResult> => {
       const saved = await options.cache.get('evalCache', question.id)

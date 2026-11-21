@@ -23,7 +23,9 @@ export const stalenessTimeline = (
 ): StalenessRow[] => {
   const items = discrepancies.flatMap((report) => {
     const evidence = parseEvidence(report.evidence)
-    return evidence ? [{ report, evidence, key: `${report.entryId}|${evidence.field}` }] : []
+    return evidence
+      ? [{ report, evidence, key: `${report.entryId}|${evidence.field}|${String(evidence.expected)}` }]
+      : []
   })
   return [...new Set(items.map((item) => item.key))].flatMap((key) => {
     const group = items.filter((item) => item.key === key)
@@ -32,14 +34,15 @@ export const stalenessTimeline = (
     if (!origin || !first || origin.evidence.changedAt === undefined) return []
     const { entryId } = first.report
     const { field } = first.evidence
-    const same = (record: JsonObject) => record.entryId === entryId && record.field === field
+    const same = (record: JsonObject) =>
+      record.entryId === entryId && record.field === field && record.from === first.evidence.expected
     const proposal = proposals.find(same)
     const fix = changes.find(same)
     return [
       {
         entryId,
         field,
-        change: `${String(origin.evidence.query.where?.[Object.keys(origin.evidence.query.where)[0] ?? ''])} -> ${origin.evidence.to}`,
+        change: `${String(origin.evidence.expected)} -> ${origin.evidence.to}`,
         staleAt: origin.evidence.changedAt,
         detectedAt: first.report.reportedAt,
         detectedBy: first.report.source,
