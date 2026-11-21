@@ -12,6 +12,7 @@
     "@crewdesk/eval": "workspace:*",
     "@crewdesk/intake": "workspace:*",
     "@crewdesk/knowledge": "workspace:*",
+    "@crewdesk/ops": "workspace:*",
     "@crewdesk/runtime": "workspace:*"
   }
 }

@@ -59,6 +59,12 @@ importers:
         specifier: ^2.9.1
         version: 2.9.1
 
+  packages/ops:
+    dependencies:
+      '@crewdesk/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/runtime:
     dependencies:
       '@crewdesk/core':
@@ -82,6 +88,9 @@ importers:
       '@crewdesk/knowledge':
         specifier: workspace:*
         version: link:../knowledge
+      '@crewdesk/ops':
+        specifier: workspace:*
+        version: link:../ops
       '@crewdesk/runtime':
         specifier: workspace:*
         version: link:../runtime

@@ -14,6 +14,7 @@ export type SimEvent =
   | { at: number; kind: 'reorg'; from: string; to: string }
   | { at: number; kind: 'burst'; durationMs: number; factor: number }
   | { at: number; kind: 'runtimeOutage'; durationMs: number; failureRate: number }
+  | { at: number; kind: 'seatDrain'; seat: string; units: number }
 
 const orgColumns = [
   { system: 'iam', resource: 'accounts', field: 'org_cd' },

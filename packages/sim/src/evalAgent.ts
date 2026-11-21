@@ -27,7 +27,7 @@ export const createScriptedEvalAgent =
       risk: item.risk,
       urgency: 'normal',
       status: 'running',
-      budget: { tokens: 60000, turns: 12, subagents: 0 },
+      budget: { tokens: 200_000, turns: 12, subagents: 0 },
       createdAt: 0,
     }
     const pending = executeTask(

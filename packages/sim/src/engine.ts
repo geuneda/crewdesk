@@ -1,5 +1,15 @@
 import { type ApprovalRule, createApprovalDesk } from '@crewdesk/approval'
-import type { ApprovalRecord, Domain, DomainAction, JsonObject, OutboundMessage, Task } from '@crewdesk/core'
+import type {
+  ApprovalRecord,
+  Domain,
+  DomainAction,
+  JsonObject,
+  OutboundMessage,
+  Seat,
+  Task,
+  UsageRecord,
+  UsageReport,
+} from '@crewdesk/core'
 import {
   actionTypesOf,
   approverOf,
@@ -8,9 +18,11 @@ import {
   type KnowledgeBase,
   lookup,
 } from '@crewdesk/knowledge'
+import { createLedger, type Pricing, placeTask, type Route, routeModel } from '@crewdesk/ops'
 import { type ApproverPolicy, createVirtualApprovers } from './approver.ts'
 import { companyActions } from './company/actions.ts'
 import { buildCompanyDb, people } from './company/data.ts'
+import { defaultRoutes, defaultSeats, fakePricing } from './company/ops.ts'
 import { companyScript } from './company/scripts.ts'
 import { createDesk } from './desk.ts'
 import { createMemoryChannel } from './dummies/channel.ts'
@@ -37,13 +49,18 @@ export type SimConfig = {
   knowledgeEnabled: boolean
   approvals: { enabled: boolean } & ApproverPolicy
   tokens: TokenModel
+  seats: Seat[]
+  pricing: Pricing
+  routes: Route[]
+  intakeStrongModel: string
 }
 
 export type SimResult = {
   messages: number
   tasks: Task[]
   traces: JsonObject[]
-  usage: JsonObject[]
+  usage: UsageRecord[]
+  parked: JsonObject[]
   outbox: OutboundMessage[]
   approvals: ApprovalRecord[]
   ruleChanges: JsonObject[]
@@ -63,6 +80,10 @@ export const defaultSimConfig = {
   knowledgeEnabled: true,
   approvals: { enabled: true, rejectRate: 0.02, adminRejectRate: 0.3, modifyRate: 0.03 },
   tokens: defaultTokenModel,
+  seats: defaultSeats,
+  pricing: fakePricing,
+  routes: defaultRoutes,
+  intakeStrongModel: 'medium',
 } satisfies Partial<SimConfig>
 
 const domains: Domain[] = ['access', 'deploy', 'incident']
@@ -83,7 +104,19 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
     tokens: config.tokens,
   })
   const queues = Object.fromEntries(domains.map((domain) => [domain, createMemoryQueue<Task>()]))
-  const recordUsage = (report: JsonObject) => store.append('usage', { ...report, at: clock.now() })
+  const ledger = createLedger({
+    store,
+    clock,
+    pricing: config.pricing,
+    seats: config.seats,
+    sharedSeat: 'seat-intake',
+  })
+  const recordUsage = async (report: UsageReport) => void (await ledger.record(report))
+  const seatOf = (id: string): Seat => {
+    const seat = config.seats.find((candidate) => candidate.id === id)
+    if (!seat) throw new Error(`the simulation needs a seat named ${id}`)
+    return seat
+  }
   let errors: unknown[] = []
   const onError = (error: unknown) => {
     errors = [...errors, error]
@@ -110,7 +143,24 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
     store,
     queueFor: (domain) => queues[domain] ?? createMemoryQueue<Task>(),
     knowledgeFor: (task) => (config.knowledgeEnabled ? fragmentFor(config.kb, task.taskType) : []),
-    workModel: () => 'medium',
+    workModel: (task) => routeModel(config.routes, 'work', task.risk),
+    place: (task) => {
+      const home = seatOf(`seat-${task.domain}`)
+      const placement = placeTask(
+        task.urgency,
+        home,
+        seatOf('seat-overflow'),
+        ledger.left(home.id),
+        ledger.resetAt(home.id),
+      )
+      if (placement.kind === 'wait') {
+        void store
+          .append('parked', { taskId: task.id, at: clock.now(), until: placement.until })
+          .catch(onError)
+      }
+      return placement
+    },
+    onPlaced: (task, seat) => ledger.assign(task.id, seat),
     onError,
     intake: {
       channel,
@@ -118,9 +168,9 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       store,
       clock,
       catalog: () => catalogOf(config.kb),
-      models: { cheap: 'small', strong: 'medium' },
+      models: { cheap: routeModel(config.routes, 'intake'), strong: config.intakeStrongModel },
       confidenceThreshold: 0.7,
-      budget: { tokens: 60000, turns: 12, subagents: 0 },
+      budget: { tokens: 200_000, turns: 12, subagents: 0 },
       agentFor: (domain) => `agent-${domain}`,
       recordUsage,
     },
@@ -142,7 +192,7 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       clock,
       systems,
       actionTypes: () => actionTypesOf(config.kb),
-      replyModel: 'small',
+      replyModel: routeModel(config.routes, 'close'),
       reportIncident: approvals.reportIncident,
       recordUsage,
     },
@@ -158,7 +208,8 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
   const inject = async () => {
     for (const event of [...config.events].sort((a, b) => a.at - b.at)) {
       await clock.sleep(event.at - clock.now())
-      applyEvent(systems, event)
+      if (event.kind === 'seatDrain') ledger.drain(event.seat, event.units)
+      else applyEvent(systems, event)
     }
   }
   const daily = async () => {
@@ -177,7 +228,8 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
     messages: workload.length,
     tasks: (await store.list('task')) as Task[],
     traces: await store.list('trace'),
-    usage: await store.list('usage'),
+    usage: (await store.list('usage')) as UsageRecord[],
+    parked: await store.list('parked'),
     outbox: channel.outbox(),
     approvals: (await store.list('approval')) as ApprovalRecord[],
     ruleChanges: await store.list('ruleChange'),

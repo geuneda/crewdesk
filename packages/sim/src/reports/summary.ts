@@ -26,9 +26,9 @@ export const summarize = (result: SimResult) => {
     awaitingApproval: count('awaitingApproval'),
     correct,
     reasons,
-    tokens: result.usage.reduce((sum, record) => {
-      const usage = record.usage as { inputTokens: number; outputTokens: number; cachedTokens: number }
-      return sum + usage.inputTokens + usage.outputTokens + usage.cachedTokens
-    }, 0),
+    tokens: result.usage.reduce(
+      (sum, record) => sum + record.inputTokens + record.outputTokens + record.cachedTokens,
+      0,
+    ),
   }
 }

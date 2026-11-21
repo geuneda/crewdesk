@@ -37,6 +37,8 @@ const setup = (wrap: (channel: ChannelPort) => ChannelPort = (channel) => channe
     queueFor: () => queue,
     knowledgeFor: () => [],
     workModel: () => 'medium',
+    place: () => ({ kind: 'run', seat: 'seat-deploy', exclusive: true }),
+    onPlaced: () => {},
     onError: (error) => void errors.push(error),
     intake: {
       channel,

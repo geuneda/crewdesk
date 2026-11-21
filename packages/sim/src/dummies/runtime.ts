@@ -42,9 +42,9 @@ type Session = {
 const size = (value: unknown) => Math.ceil(JSON.stringify(value).length / 4)
 
 export const defaultTokenModel: TokenModel = {
-  systemTokens: 1200,
-  toolSchemaTokens: 2500,
-  outputTokensPerTurn: 150,
+  systemTokens: 12000,
+  toolSchemaTokens: 8000,
+  outputTokensPerTurn: 400,
   codeMode: true,
   caching: true,
 }

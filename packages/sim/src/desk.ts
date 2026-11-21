@@ -1,5 +1,6 @@
 import type { Domain, InboundMessage, KnowledgeEntry, QueuePort, StorePort, Task } from '@crewdesk/core'
 import { handleMessage, type IntakeDeps, threadKey } from '@crewdesk/intake'
+import type { Placement } from '@crewdesk/ops'
 import { type CloseDeps, closeTask, type ExecutionDeps, executeTask } from '@crewdesk/runtime'
 
 export type DeskDeps = {
@@ -10,6 +11,8 @@ export type DeskDeps = {
   queueFor(domain: Domain): QueuePort<Task>
   knowledgeFor(task: Task): KnowledgeEntry[]
   workModel(task: Task): string
+  place(task: Task): Placement
+  onPlaced(task: Task, seat: string): void
   onError(error: unknown): void
 }
 
@@ -35,6 +38,9 @@ export const createDesk = (deps: DeskDeps) => {
   let draining: ReadonlySet<Domain> = new Set()
   let seats: Record<string, () => Promise<Release>> = {}
   let held: Record<string, Release> = {}
+  let exclusive: ReadonlySet<string> = new Set()
+  let parked: Record<string, Task[]> = {}
+  let wakeAt: Record<string, number> = {}
 
   const acquire = async (task: Task) => {
     const seat = seats[task.domain] ?? createLock()
@@ -66,7 +72,7 @@ export const createDesk = (deps: DeskDeps) => {
             release(paused)
           },
           onResume: async (resumed) => {
-            await acquire(resumed)
+            if (exclusive.has(resumed.id)) await acquire(resumed)
             await setStatus(resumed, 'running')
           },
         },
@@ -79,22 +85,57 @@ export const createDesk = (deps: DeskDeps) => {
       await setStatus(task, 'escalated').catch(deps.onError)
     } finally {
       release(task)
+      exclusive = new Set([...exclusive].filter((taskId) => taskId !== task.id))
       active = active.filter((item) => item.taskId !== task.id)
     }
+  }
+
+  const start = async (task: Task) => {
+    const placement = deps.place(task)
+    if (placement.kind === 'wait') {
+      parked = { ...parked, [task.domain]: [...(parked[task.domain] ?? []), task] }
+      return placement.until
+    }
+    deps.onPlaced(task, placement.seat)
+    if (placement.exclusive) {
+      exclusive = new Set([...exclusive, task.id])
+      await acquire(task)
+    }
+    void work(task)
+    return null
+  }
+
+  const wakeLater = (domain: Domain, until: number) => {
+    if (wakeAt[domain] !== undefined && wakeAt[domain] <= until) return
+    wakeAt = { ...wakeAt, [domain]: until }
+    const { clock } = deps.intake
+    void clock
+      .sleep(until - clock.now())
+      .then(() => {
+        if (wakeAt[domain] !== until) return
+        wakeAt = Object.fromEntries(Object.entries(wakeAt).filter(([other]) => other !== domain))
+        return drain(domain)
+      })
+      .catch(deps.onError)
   }
 
   const drain = async (domain: Domain) => {
     if (draining.has(domain)) return
     draining = new Set([...draining, domain])
     try {
+      const resting = wakeAt[domain] !== undefined
+      const waiting = resting ? [] : (parked[domain] ?? [])
+      if (!resting) parked = { ...parked, [domain]: [] }
+      let until: number | null = null
+      for (const task of waiting) until = (await start(task)) ?? until
       for (
         let task = await deps.queueFor(domain).dequeue();
         task;
         task = await deps.queueFor(domain).dequeue()
       ) {
-        await acquire(task)
-        void work(task)
+        until = (await start(task)) ?? until
       }
+      if (until !== null) wakeLater(domain, until)
     } finally {
       draining = new Set([...draining].filter((other) => other !== domain))
     }
