@@ -23,6 +23,12 @@ importers:
 
   packages/core: {}
 
+  packages/sim:
+    dependencies:
+      '@crewdesk/core':
+        specifier: workspace:*
+        version: link:../core
+
 packages:
 
   '@biomejs/biome@2.6.8':
