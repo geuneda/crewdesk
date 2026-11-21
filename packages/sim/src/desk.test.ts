@@ -14,7 +14,9 @@ import { createMemorySystems } from './dummies/systems.ts'
 const setup = (
   wrap: (channel: ChannelPort) => ChannelPort = (channel) => channel,
   place: (now: number) => Placement = () => ({ kind: 'run', seat: 'seat-deploy', exclusive: true }),
+  approvalMs = 0,
 ) => {
+  let approved = false
   const clock = createVirtualClock()
   const store = createSqliteStore()
   const memory = createMemoryChannel()
@@ -79,8 +81,12 @@ const setup = (
       clock,
       lookup: async () => [],
       recordUsage: async () => {},
-      authorize: async () => ({ status: 'allow' }),
-      awaitDecision: async () => {},
+      authorize: async () =>
+        approvalMs === 0 || approved ? { status: 'allow' } : { status: 'pending', approvalId: 'ap-1' },
+      awaitDecision: async () => {
+        await clock.sleep(approvalMs)
+        approved = true
+      },
       onExecuted: async () => {},
       onDomainError: async () => {},
       retryDelayMs: 1,
@@ -192,6 +198,24 @@ test('a task that waited for the seat is placed again when it gets the seat', as
   expect(await store.get('task', 'task-m2')).toMatchObject({ status: 'queued' })
   await clock.runUntil(Number.POSITIVE_INFINITY)
   const trace = await store.get('trace', 'task-m2')
+  expect(trace).toMatchObject({ ok: true })
+  expect(Number(trace?.closedAt)).toBeGreaterThanOrEqual(60_000)
+})
+
+test('a task resumed after approval waits when its seat ran out in the meantime', async () => {
+  const { clock, store, send } = setup(
+    undefined,
+    (now) =>
+      now >= 5_000 && now < 60_000
+        ? { kind: 'wait', until: 60_000 }
+        : { kind: 'run', seat: 'seat-deploy', exclusive: true },
+    10_000,
+  )
+  void send('m1', 'pay-api 배포')
+  await clock.runUntil(30_000)
+  expect(await store.get('task', 'task-m1')).toMatchObject({ status: 'awaitingApproval' })
+  await clock.runUntil(Number.POSITIVE_INFINITY)
+  const trace = await store.get('trace', 'task-m1')
   expect(trace).toMatchObject({ ok: true })
   expect(Number(trace?.closedAt)).toBeGreaterThanOrEqual(60_000)
 })

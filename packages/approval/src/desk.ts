@@ -35,7 +35,7 @@ export type PendingApproval = {
       conditionKey: string
       requesterRole: string
     }
-  | { kind: 'rule'; proposal: RuleProposal }
+  | { kind: 'rule'; proposal: RuleProposal; basis: number }
 )
 
 export type Decision = {
@@ -69,7 +69,12 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
   let seq = 0
   let ruleTail: Promise<unknown> = Promise.resolve()
   const gateOfCall = new Map<string, Map<string, Gate>>()
-  const recorded = new Set<string>()
+  const recorded = new Map<string, Decision['decision']>()
+  const streakBreaks = new Map<string, number>()
+  const breaksOf = (actionType: string, conditionKey: string) =>
+    streakBreaks.get(ruleKey(actionType, conditionKey)) ?? 0
+  const breakStreak = (actionType: string, conditionKey: string) =>
+    streakBreaks.set(ruleKey(actionType, conditionKey), breaksOf(actionType, conditionKey) + 1)
   const decided = new Map<string, 'approved' | 'rejected'>()
   const waiters = new Map<string, (() => void)[]>()
   const deciding = new Set<string>()
@@ -125,7 +130,10 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
       const { actionType, conditionKey, from, to } = item.proposal
       await inOrder(async () => {
         const type = typeOf(actionType)
-        const stillValid = type !== undefined && levelOf(type, conditionKey, rules) === from
+        const stillValid =
+          type !== undefined &&
+          levelOf(type, conditionKey, rules) === from &&
+          breaksOf(actionType, conditionKey) === item.basis
         if (decision.decision === 'approved' && stillValid) {
           await setRule({ actionType, conditionKey, level: to }, from, 'promotion')
         } else {
@@ -134,7 +142,14 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
       })
       return
     }
-    if (!recorded.has(item.id)) {
+    const saved = recorded.get(item.id)
+    if (saved && saved !== decision.decision) {
+      throw new Error(`${item.id} was already recorded as ${saved}; finish that decision`)
+    }
+    if (!saved && (decision.decision === 'rejected' || decision.modified)) {
+      breakStreak(item.actionType, item.conditionKey)
+    }
+    if (!saved) {
       await record({
         actionType: item.actionType,
         conditionKey: item.conditionKey,
@@ -148,7 +163,7 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
         taskId: item.taskId,
         ...(decision.reason ? { reason: decision.reason } : {}),
       })
-      recorded.add(item.id)
+      recorded.set(item.id, decision.decision)
     }
     if (decision.decision === 'rejected') await demote(item.actionType, item.conditionKey, 'rejection')
     recorded.delete(item.id)
@@ -269,7 +284,10 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
 
     reportIncident: (action: DomainAction): Promise<void> => {
       const type = typeOf(`${action.system}.${action.action}`)
-      return type ? demote(type.id, conditionKeyOf(type, action.params), 'incident') : Promise.resolve()
+      if (!type) return Promise.resolve()
+      const conditionKey = conditionKeyOf(type, action.params)
+      breakStreak(type.id, conditionKey)
+      return demote(type.id, conditionKey, 'incident')
     },
 
     proposePromotions: (): RuleProposal[] => {
@@ -293,6 +311,7 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
             id: `ap-${++seq}`,
             kind: 'rule',
             proposal,
+            basis: breaksOf(proposal.actionType, proposal.conditionKey),
             approver: type.owner,
             level: 'always',
             requestedAt: deps.clock.now(),

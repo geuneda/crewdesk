@@ -1,7 +1,8 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { type RuntimeEvent, systemClock } from '@crewdesk/core'
-import { loadDistro } from '@crewdesk/distro'
+import { type Distro, knowledgeHash, loadDistro } from '@crewdesk/distro'
+import { hashOf } from '@crewdesk/knowledge'
 import { createReplayRuntime, type Recording, recordRuntime } from '@crewdesk/runtime'
 import { createClaudeRuntime, type RunAgent } from '@crewdesk/runtime-claude'
 import {
@@ -14,7 +15,21 @@ import {
   renderKnowledgeReport,
 } from '@crewdesk/sim'
 
-export type RecordingFile = { model: string; runs: number; recordedAt: string; recordings: Recording[] }
+export type RecordingFile = {
+  model: string
+  runs: number
+  recordedAt: string
+  inputHash: string
+  recordings: Recording[]
+}
+
+const promptOf = (distro: Distro): string => {
+  if (!distro.prompts.work) throw new Error('the distro has no prompts/work.md')
+  return `${distro.prompts.work}\n\n${companyToolGuide}`
+}
+
+const inputHashOf = (distro: Distro): string =>
+  hashOf({ questions: distro.questions, knowledge: knowledgeHash(distro.kb), prompt: promptOf(distro) })
 
 export const realModels: Record<string, string> = {
   small: 'claude-haiku-5-5',
@@ -42,12 +57,10 @@ export const record = async (options: {
       ],
     }
   }
-  const systemPrompt = distro.prompts.work
-  if (!systemPrompt) throw new Error('the distro has no prompts/work.md')
   let recordings: Recording[] = []
   const runtime = recordRuntime(
     createClaudeRuntime({
-      systemPrompt: `${systemPrompt}\n\n${companyToolGuide}`,
+      systemPrompt: promptOf(distro),
       models: realModels,
       ...(options.run ? { run: options.run } : {}),
     }),
@@ -69,6 +82,7 @@ export const record = async (options: {
     model,
     runs: options.runs,
     recordedAt: new Date(systemClock.now()).toISOString(),
+    inputHash: inputHashOf(distro),
     recordings,
   }
   await mkdir(options.out, { recursive: true })
@@ -99,6 +113,7 @@ export const readRecordings = async (path: string): Promise<RecordingFile> => {
     typeof file.model !== 'string' ||
     typeof file.runs !== 'number' ||
     typeof file.recordedAt !== 'string' ||
+    typeof file.inputHash !== 'string' ||
     !Array.isArray(file.recordings) ||
     !file.recordings.every(
       (item) => typeof item?.key === 'string' && Array.isArray(item.events) && item.events.every(isEvent),
@@ -114,6 +129,25 @@ export const replayKnowledgeEffect = async (
   file: RecordingFile,
 ): Promise<KnowledgeEffectRow[]> => {
   const distro = await loadDistro(base)
+  if (file.inputHash !== inputHashOf(distro)) {
+    throw new Error(
+      'the recordings were made with other questions, knowledge, or prompt than this distro has',
+    )
+  }
+  const complete = (recording: Recording) => {
+    const last = recording.events.at(-1)
+    return last?.type === 'done' || last?.type === 'error'
+  }
+  const short = distro.questions.flatMap((question) =>
+    ['with', 'without']
+      .map((condition) => `eval-${question.id}|${condition}`)
+      .filter(
+        (key) => file.recordings.filter((item) => item.key === key && complete(item)).length < file.runs,
+      ),
+  )
+  if (short.length > 0) {
+    throw new Error(`the recordings lack ${file.runs} complete run(s) for: ${short.join(', ')}`)
+  }
   const runtime = createReplayRuntime(file.recordings, conditionKey)
   const still = { now: () => 0, sleep: async () => {} }
   return measureKnowledgeEffect({

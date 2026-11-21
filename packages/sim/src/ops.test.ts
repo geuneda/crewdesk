@@ -57,6 +57,12 @@ test('report 6: seats win only above a break-even volume, and are not compared w
   expect(rows[2]?.parkedTasks).toBeGreaterThan(0)
   expect(rows[2]?.tasks).toBeLessThan(rows[2]?.meteredTasks ?? 0)
   const report = renderBreakEvenReport(rows, 100, 7)
-  expect(report).toContain('손익분기점: 하루 요청 320건')
+  expect(report).toContain(
+    '손익분기점: 하루 요청 320건에서 좌석제가 싸다. 비교한 요청량은 하루 20, 320건이다.',
+  )
   expect(report).toContain('비교 불가')
+  expect(report).toContain('요청량 1개는 결론에서 뺐다')
+  const onlyIncomparable = renderBreakEvenReport(rows.slice(2), 100, 7)
+  expect(onlyIncomparable).toContain('손익분기점: 산출할 수 없다')
+  expect(renderBreakEvenReport(rows.slice(0, 1), 100, 7)).toContain('(하루 20건)에서는 종량제가 싸다')
 })

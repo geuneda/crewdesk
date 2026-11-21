@@ -122,7 +122,16 @@ export const runBreakEven = async (
 const verdict = { seat: '좌석제', metered: '종량제', incomparable: '비교 불가(좌석제가 덜 처리함)' }
 
 export const renderBreakEvenReport = (rows: BreakEvenRow[], seatMonthlyUsd: number, days: number): string => {
-  const point = rows.find((row) => row.cheaper === 'seat')
+  const comparable = rows.filter((row) => row.cheaper !== 'incomparable')
+  const volumes = comparable.map((row) => row.requestsPerDay).join(', ')
+  const point = comparable.find((row) => row.cheaper === 'seat')
+  const skipped = rows.length - comparable.length
+  const conclusion =
+    comparable.length === 0
+      ? '손익분기점: 산출할 수 없다. 비교할 수 있는 요청량이 없다.'
+      : point
+        ? `손익분기점: 하루 요청 ${point.requestsPerDay}건에서 좌석제가 싸다. 비교한 요청량은 하루 ${volumes}건이다.`
+        : `손익분기점: 비교한 요청량(하루 ${volumes}건)에서는 종량제가 싸다.`
   return [
     '# 보고서 6: 종량제 대 좌석제 손익분기점',
     '',
@@ -137,9 +146,8 @@ export const renderBreakEvenReport = (rows: BreakEvenRow[], seatMonthlyUsd: numb
         `| ${row.requestsPerDay} | ${row.meteredTasks} | ${row.tasks} | ${row.meteredUsd} | ${row.seatUsd} | ${row.seatFeesUsd} | ${row.overflowUsd} | ${row.parkedTasks} | ${verdict[row.cheaper]} |`,
     ),
     '',
-    point
-      ? `손익분기점: 하루 요청 ${point.requestsPerDay}건 부근부터 좌석제가 싸다.`
-      : '손익분기점: 이 범위에서는 종량제가 계속 싸다.',
+    conclusion,
+    ...(skipped > 0 ? [`좌석제가 일을 덜 처리한 요청량 ${skipped}개는 결론에서 뺐다.`] : []),
     '',
   ].join('\n')
 }

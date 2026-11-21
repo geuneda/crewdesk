@@ -6,7 +6,7 @@ import {
   planUpgrade,
   snapshotOf,
 } from '@crewdesk/distro'
-import { runEval } from '@crewdesk/eval'
+import { type Question, runEval } from '@crewdesk/eval'
 import { patchEntry } from '@crewdesk/knowledge'
 import { routeModel } from '@crewdesk/ops'
 import { createEvalAgent, createSqliteStore } from '@crewdesk/sim'
@@ -17,11 +17,13 @@ export type UpgradeOutcome = {
   conflicts: Conflict[]
   accuracyBefore: number | null
   accuracyAfter: number | null
+  questionsAdded: string[]
+  questionsRemoved: string[]
 }
 
-export const accuracyOf = async (distro: Distro): Promise<number> => {
+export const accuracyOf = async (distro: Distro, questions: Question[]): Promise<number> => {
   const report = await runEval({
-    questions: distro.questions,
+    questions,
     kb: distro.kb,
     agent: createEvalAgent({ kb: distro.kb }),
     cache: createSqliteStore(),
@@ -33,15 +35,23 @@ export const accuracyOf = async (distro: Distro): Promise<number> => {
 
 export const checkUpgrade = async (was: Distro, now: Distro, overlay: Overlay): Promise<UpgradeOutcome> => {
   const { conflicts } = planUpgrade(snapshotOf(was), snapshotOf(now), overlay)
-  if (conflicts.length > 0) {
-    return { org: overlay.org, status: 'conflict', conflicts, accuracyBefore: null, accuracyAfter: null }
-  }
-  const accuracyBefore = await accuracyOf(applyOverlay(was, overlay))
-  const accuracyAfter = await accuracyOf(applyOverlay(now, overlay))
-  return {
+  const ids = (distro: Distro) => distro.questions.map((question) => question.id)
+  const outcome = {
     org: overlay.org,
-    status: accuracyAfter < accuracyBefore ? 'evalFailed' : 'applied',
     conflicts,
+    questionsAdded: ids(now).filter((id) => !ids(was).includes(id)),
+    questionsRemoved: ids(was).filter((id) => !ids(now).includes(id)),
+  }
+  if (conflicts.length > 0)
+    return { ...outcome, status: 'conflict', accuracyBefore: null, accuracyAfter: null }
+  if (was.questions.length === 0) {
+    return { ...outcome, status: 'evalFailed', accuracyBefore: null, accuracyAfter: null }
+  }
+  const accuracyBefore = await accuracyOf(applyOverlay(was, overlay), was.questions)
+  const accuracyAfter = await accuracyOf(applyOverlay(now, overlay), was.questions)
+  return {
+    ...outcome,
+    status: accuracyAfter < accuracyBefore ? 'evalFailed' : 'applied',
     accuracyBefore,
     accuracyAfter,
   }
@@ -62,7 +72,7 @@ export const renderUpgradeReport = (from: string, to: string, outcomes: UpgradeO
     '# 보고서 5: 배포판 업그레이드와 조직별 덮어쓰기',
     '',
     `기본 배포판 ${from} 에서 ${to} 로 올린다. 덮어쓴 값의 기본값이 바뀌었으면 충돌로 보고 멈춘다.`,
-    '충돌이 없으면 덮어쓰기를 적용한 지식으로 평가를 다시 돌리고, 정답률이 내려가지 않을 때만 적용한다.',
+    '충돌이 없으면 이전 판의 질문을 두 판에 똑같이 돌리고, 정답률이 내려가지 않을 때만 적용한다.',
     '',
     '| 조직 | 결과 | 충돌 수 | 평가(전) | 평가(후) |',
     '|---|---|---|---|---|',

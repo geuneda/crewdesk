@@ -78,8 +78,15 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
   let lookedUp: KnowledgeEntry[] = []
   let applied: string[] = []
   const used = () => [...input.knowledge, ...lookedUp]
-  const carriedBy = (action: DomainAction) =>
-    used().filter((entry) => Object.values(action.params).some((value) => value === entry.data.value))
+  const carriedBy = (action: DomainAction) => {
+    const values = Object.values(action.params)
+    return used().filter(
+      (entry) =>
+        entry.data.value !== undefined &&
+        values.includes(entry.data.value) &&
+        (entry.data.scope === undefined || values.includes(entry.data.scope)),
+    )
+  }
   let tokens = 0
   let turns = 0
   let attempts = 1

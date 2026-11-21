@@ -101,7 +101,14 @@ test('a fix the owner rejects is shown as rejected, not as pending', () => {
     result.discrepancies,
     result.knowledgeProposals,
     [],
-    [{ entryId, field, from: first.change.split(' -> ')[0] ?? '' }],
+    [
+      {
+        entryId,
+        field,
+        from: first.change.split(' -> ')[0] ?? '',
+        proposedAt: first.proposedAt ?? first.staleAt,
+      },
+    ],
   )
   expect(rejected[0]?.rejected).toBe(true)
   expect(renderStalenessReport(rejected)).toContain('담당자 반려')
@@ -216,4 +223,33 @@ test('a code missing in one scope is reported only for the entry of that scope',
   const reports = detectDiscrepancies(used, error, 't1', 5)
   expect(reports.map((report) => report.entryId)).toEqual(['role.deployer.reader'])
   expect(parseEvidence(reports[0]?.evidence ?? '')?.query.where).toEqual({ sys: 'deployer', cd: 'RO' })
+})
+
+test('a value that returns and goes stale again is a separate incident each time', async () => {
+  const cycle = await runSimulation({
+    ...defaultSimConfig,
+    days: 16,
+    approvals: { ...defaultSimConfig.approvals, rejectRate: 0 },
+    events: [
+      role('DP', 'DV', 1 * DAY + 10 * HOUR),
+      role('DV', 'DP', 7 * DAY + 10 * HOUR),
+      role('DP', 'DX', 9 * DAY + 10 * HOUR),
+    ],
+  })
+  const timeline = stalenessTimeline(cycle.discrepancies, cycle.knowledgeProposals, cycle.knowledgeChanges)
+  expect(timeline.map((item) => item.change)).toEqual(['DP -> DV', 'DV -> DP', 'DP -> DX'])
+  expect(timeline.every((item) => item.fixedAt !== null && item.fixedAt > item.staleAt)).toBe(true)
+  expect(new Set(timeline.map((item) => item.fixedAt)).size).toBe(3)
+})
+
+test('a second source change while the first fix waits for approval still ends at the final value', async () => {
+  const again = { ...approverChange, at: approverChange.at + DAY + HOUR, from: 'u1005', to: 'u1009' }
+  const moved = await runSimulation({
+    ...defaultSimConfig,
+    days: 20,
+    approvals: { ...defaultSimConfig.approvals, rejectRate: 0 },
+    events: [approverChange, again],
+  })
+  expect(moved.kb.entries.find((entry) => entry.id === 'approves.iam.grant')?.data.approver).toBe('u1009')
+  expect(moved.knowledgeChanges).toEqual([expect.objectContaining({ from: 'u1001', to: 'u1009' })])
 })

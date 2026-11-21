@@ -57,7 +57,7 @@ runtimeContract('replay', async () => ({
   settle: (pending) => pending,
 }))
 
-test('a replay repeats the recorded run and runs its tool calls against the live host', async () => {
+test('a replay runs its tool calls against the live host and stops when the outcome differs', async () => {
   const { saved, events } = await record('t1')
   expect(saved).toHaveLength(1)
   const calls: unknown[] = []
@@ -70,9 +70,11 @@ test('a replay repeats the recorded run and runs its tool calls against the live
     }),
   )
   expect(calls).toHaveLength(1)
-  expect(replayed.map((event) => event.type)).toEqual(events.map((event) => event.type))
   expect(replayed.find((event) => event.type === 'toolResult')).toMatchObject({ ok: false })
-  expect(replayed.at(-1)).toEqual(events.at(-1))
+  expect(replayed.at(-1)).toMatchObject({ type: 'error', code: 'REPLAY_DIVERGED', transient: false })
+  const same = await collect(createReplayRuntime(saved, keyOf).start(request('t1'), ok))
+  expect(same.map((event) => event.type)).toEqual(events.map((event) => event.type))
+  expect(same.at(-1)).toEqual(events.at(-1))
 })
 
 test('several takes of one key are replayed in turn, and a missing key is an error', async () => {

@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { applyOverlay, loadDistro, parseOverlay, planUpgrade, snapshotOf } from '@crewdesk/distro'
@@ -177,4 +177,91 @@ test('record refuses to bill without confirmation, then records and reports with
   expect(reports.code).toBe(0)
   expect(await readFile(join(out, 'report-1-knowledge.md'), 'utf8')).toContain('녹화의 재생')
   expect(await readFile(join(out, 'report-5-upgrade.md'), 'utf8')).toContain('| payments | 충돌로 중단 | 1 |')
+}, 60_000)
+
+test('a nested overlay patch keeps the sibling fields and conflicts at the same depth', async () => {
+  const overlay = {
+    org: 'x',
+    baseVersion: '1.0.0',
+    settings: {},
+    knowledge: { 'role.deployer.reader': { sources: { value: 'iam/role_codes/code' } } },
+  }
+  const merged = applyOverlay(base, overlay).kb.entries.find((entry) => entry.id === 'role.deployer.reader')
+  expect(merged?.data.sources).toEqual({ value: 'iam/role_codes/code', scope: 'iam/role_codes/sys' })
+  const moved = {
+    ...base,
+    version: '1.1.0',
+    kb: patchEntry(base.kb, 'role.deployer.reader', {
+      sources: { value: 'iam/roles/cd', scope: 'iam/role_codes/sys' },
+    }),
+  }
+  expect(
+    planUpgrade(snapshotOf(base), snapshotOf(moved), overlay).conflicts.map((conflict) => conflict.path),
+  ).toEqual(['knowledge.role.deployer.reader.sources.value'])
+})
+
+test('an upgrade is checked with the old questions, so dropping a failing question hides nothing', async () => {
+  const dir = join(await temp(), 'data')
+  await init({ dir, org: 'data', base: baseDistroDir })
+  const next = await nextBaseDir(
+    (yaml) => yaml.replace('aliases: [운영], value: P', 'aliases: [운영], value: PROD'),
+    'knowledge/codes.yaml',
+  )
+  const questions = join(next, 'eval', 'questions.yaml')
+  const kept = (await readFile(questions, 'utf8'))
+    .split('  - id: ')
+    .filter((block) => !block.startsWith('q.deploy.prod'))
+  await writeFile(questions, kept.join('  - id: '))
+  const stopped = await upgrade({ dir, base: next })
+  expect(stopped.code).toBe(1)
+  expect(stopped.lines.join('\n')).toMatch(
+    /eval accuracy fell[\s\S]*questions removed by the new base, still checked: q.deploy.prod/,
+  )
+  await writeFile(join(dir, 'base.lock.json'), '{"version":"1.0.0","settings":{},"knowledge":{}}')
+  await expect(upgrade({ dir, base: next })).rejects.toThrow(/not a valid lock file/)
+})
+
+test('an upgrade whose outputs cannot be written keeps the old lock and can be run again', async () => {
+  const dir = join(await temp(), 'live')
+  await init({ dir, org: 'live', base: baseDistroDir })
+  const next = await nextBaseDir((yaml) => yaml.replace('tokens: 200000', 'tokens: 250000'))
+  await mkdir(join(dir, 'resolved.json'))
+  await expect(upgrade({ dir, base: next })).rejects.toThrow()
+  expect(JSON.parse(await readFile(join(dir, 'base.lock.json'), 'utf8')).version).toBe('1.0.0')
+  await rm(join(dir, 'resolved.json'), { recursive: true })
+  expect((await upgrade({ dir, base: next })).code).toBe(0)
+  expect(JSON.parse(await readFile(join(dir, 'resolved.json'), 'utf8')).version).toBe('1.1.0')
+})
+
+test('recordings that are incomplete or made for another distro are refused', async () => {
+  const out = await temp()
+  await record({
+    base: baseDistroDir,
+    out,
+    runs: 1,
+    model: 'medium',
+    confirmCost: true,
+    run: async function* () {
+      yield {
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        result: '',
+        total_cost_usd: 0,
+        num_turns: 1,
+      } as never
+    },
+  })
+  const path = join(out, 'recordings.json')
+  const file = await readRecordings(path)
+  const simWith = async (edited: object) => {
+    await writeFile(path, JSON.stringify(edited))
+    return sim({ base: baseDistroDir, overlays: overlaysDir, out, days: 1, seed: 1, recordings: path })
+  }
+  await expect(
+    simWith({ ...file, recordings: file.recordings.filter((item) => !item.key.endsWith('|without')) }),
+  ).rejects.toThrow(/lack 1 complete run\(s\) for: eval-q.access.deployer\|without/)
+  await expect(simWith({ ...file, inputHash: 'other' })).rejects.toThrow(
+    /other questions, knowledge, or prompt/,
+  )
 }, 60_000)

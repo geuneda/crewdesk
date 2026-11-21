@@ -1,8 +1,8 @@
 import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { canonicalJson, type Json, type JsonObject } from '@crewdesk/core'
+import { canonicalJson, type Json, type JsonObject, type KnowledgeEntry } from '@crewdesk/core'
 import { parseQuestions, type Question } from '@crewdesk/eval'
-import { entryHash, hashOf, type KnowledgeBase, loadKnowledge, patchEntry } from '@crewdesk/knowledge'
+import { entryHash, hashOf, type KnowledgeBase, loadKnowledge } from '@crewdesk/knowledge'
 import { parse } from 'yaml'
 import { isObject, type Settings, toSettings } from './settings.ts'
 
@@ -22,7 +22,12 @@ export type Overlay = {
   knowledge: Record<string, JsonObject>
 }
 
-export type Snapshot = { version: string; settings: JsonObject; knowledge: Record<string, JsonObject> }
+export type Snapshot = {
+  version: string
+  settings: JsonObject
+  entries: KnowledgeEntry[]
+  questions: Question[]
+}
 
 export type Conflict = { path: string; overlay: Json; was: Json | null; now: Json | null }
 export type UpgradePlan = { from: string; to: string; conflicts: Conflict[] }
@@ -91,15 +96,42 @@ export const applyOverlay = (base: Distro, overlay: Overlay): Distro => {
   return {
     ...base,
     settings: toSettings(merge(base.settings as unknown as Json, overlay.settings)),
-    kb: Object.entries(overlay.knowledge).reduce((kb, [id, data]) => patchEntry(kb, id, data), base.kb),
+    kb: {
+      entries: base.kb.entries.map((entry) => {
+        const patch = overlay.knowledge[entry.id]
+        return patch ? { ...entry, data: merge(entry.data, patch) as JsonObject } : entry
+      }),
+    },
   }
 }
 
 export const snapshotOf = (distro: Distro): Snapshot => ({
   version: distro.version,
   settings: distro.settings as unknown as JsonObject,
-  knowledge: Object.fromEntries(distro.kb.entries.map((entry) => [entry.id, entry.data])),
+  entries: distro.kb.entries,
+  questions: distro.questions,
 })
+
+export const distroFromSnapshot = (snapshot: Snapshot, shell: Distro): Distro => ({
+  ...shell,
+  version: snapshot.version,
+  settings: toSettings(snapshot.settings),
+  kb: { entries: snapshot.entries },
+  questions: snapshot.questions,
+})
+
+export const parseSnapshot = (raw: unknown): Snapshot => {
+  if (
+    !isObject(raw) ||
+    typeof raw.version !== 'string' ||
+    !isObject(raw.settings) ||
+    !Array.isArray(raw.entries) ||
+    !Array.isArray(raw.questions)
+  ) {
+    throw new Error('base.lock.json is not a valid lock file')
+  }
+  return raw as unknown as Snapshot
+}
 
 export const knowledgeHash = (kb: KnowledgeBase): string =>
   hashOf(kb.entries.map((entry) => [entry.id, entryHash(entry)]))
@@ -112,7 +144,14 @@ const leaves = (value: Json, path: string[]): { path: string[]; value: Json }[] 
 const at = (root: Json | undefined, path: string[]): Json | undefined =>
   path.reduce<Json | undefined>((node, key) => (isObject(node) ? node[key] : undefined), root)
 
+const sides = (snapshot: Snapshot) => ({
+  settings: snapshot.settings,
+  knowledge: Object.fromEntries(snapshot.entries.map((entry) => [entry.id, entry.data])),
+})
+
 export const planUpgrade = (was: Snapshot, now: Snapshot, overlay: Overlay): UpgradePlan => {
+  const before = sides(was)
+  const after = sides(now)
   const overridden = [
     ...leaves(overlay.settings, []).map((leaf) => ({ ...leaf, root: 'settings' as const })),
     ...Object.entries(overlay.knowledge).flatMap(([id, data]) =>
@@ -123,18 +162,17 @@ export const planUpgrade = (was: Snapshot, now: Snapshot, overlay: Overlay): Upg
     from: was.version,
     to: now.version,
     conflicts: overridden.flatMap((leaf) => {
-      const before = at(was[leaf.root], leaf.path)
-      const after = at(now[leaf.root], leaf.path)
-      const same =
-        before !== undefined && after !== undefined && canonicalJson(before) === canonicalJson(after)
-      return same || (before === undefined && after === undefined)
+      const old = at(before[leaf.root], leaf.path)
+      const next = at(after[leaf.root], leaf.path)
+      const same = old !== undefined && next !== undefined && canonicalJson(old) === canonicalJson(next)
+      return same || (old === undefined && next === undefined)
         ? []
         : [
             {
               path: [leaf.root, ...leaf.path].join('.'),
               overlay: leaf.value,
-              was: before ?? null,
-              now: after ?? null,
+              was: old ?? null,
+              now: next ?? null,
             },
           ]
     }),

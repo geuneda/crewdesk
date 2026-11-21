@@ -327,3 +327,35 @@ test('a rejection whose demotion could not be saved is not recorded twice on ret
   expect(stored.approval?.filter((record) => record.taskId === 'r1')).toHaveLength(1)
   expect(desk.rules()[0]?.level).toBe('always')
 })
+
+test('a rejection at the lowest level still cancels a promotion proposed before it', async () => {
+  const { desk, run, tick } = setup()
+  await run('a1')
+  await run('a2')
+  tick()
+  expect(desk.proposePromotions()).toHaveLength(1)
+  const permit = await desk.authorize({ ...task, id: 'a3' }, action)
+  if (permit.status !== 'pending') throw new Error('expected pending')
+  await desk.decide(permit.approvalId, { approver: 'lead-access', decision: 'rejected' })
+  for (const item of desk.pending())
+    await desk.decide(item.id, { approver: item.approver, decision: 'approved' })
+  expect(desk.rules()).toEqual([])
+})
+
+test('a half-saved decision can only be finished as the same decision', async () => {
+  const { desk, promoteTo, breakStore, tick } = setup()
+  await promoteTo('recommend')
+  tick()
+  const permit = await desk.authorize({ ...task, id: 'r2' }, action)
+  if (permit.status !== 'pending') throw new Error('expected pending')
+  breakStore(true, 'ruleChange')
+  await expect(
+    desk.decide(permit.approvalId, { approver: 'lead-access', decision: 'rejected' }),
+  ).rejects.toThrow(/store down/)
+  breakStore(false)
+  await expect(
+    desk.decide(permit.approvalId, { approver: 'lead-access', decision: 'approved' }),
+  ).rejects.toThrow(/already recorded as rejected/)
+  await desk.decide(permit.approvalId, { approver: 'lead-access', decision: 'rejected' })
+  expect(await desk.authorize({ ...task, id: 'r2' }, action)).toMatchObject({ status: 'denied' })
+})

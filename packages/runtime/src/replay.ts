@@ -78,6 +78,16 @@ export const createReplayRuntime = (recordings: Recording[], keyOf: KeyOf): Runt
         ok: result.status === 'ok',
         output: result.status === 'ok' ? result.output : { code: result.code, message: result.message },
       }
+      const then = recorded.find((other) => other.type === 'toolResult' && other.callId === call.callId)
+      if (then?.type === 'toolResult' && then.ok !== (result.status === 'ok')) {
+        yield {
+          type: 'error',
+          code: 'REPLAY_DIVERGED',
+          transient: false,
+          message: `${call.tool} ${call.callId} was ${then.ok ? 'ok' : 'refused'} when recorded`,
+        }
+        return
+      }
     }
   }
 

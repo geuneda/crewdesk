@@ -49,7 +49,14 @@ export const createBatch = (deps: BatchDeps) => {
   let renames: Rename[] = []
   let open: ReadonlySet<string> = new Set()
 
-  const collectChanges = async () => {
+  let collecting: Promise<void> = Promise.resolve()
+
+  const collectChanges = (): Promise<void> => {
+    collecting = collecting.then(readChanges)
+    return collecting
+  }
+
+  const readChanges = async () => {
     const events = await deps.systems.changes(changeSeq)
     changeSeq = events.at(-1)?.seq ?? changeSeq
     for (const event of events) {
@@ -151,6 +158,7 @@ export const createBatch = (deps: BatchDeps) => {
         await deps.store.append('knowledgeProposalRejected', { ...change, at: deps.clock.now() })
         return
       }
+      await collectChanges()
       const current = deps.kb().entries.find((candidate) => candidate.id === change.entryId)?.data[
         change.field
       ]

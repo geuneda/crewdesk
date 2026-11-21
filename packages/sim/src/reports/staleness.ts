@@ -27,31 +27,43 @@ export const stalenessTimeline = (
       ? [{ report, evidence, key: `${report.entryId}|${evidence.field}|${String(evidence.expected)}` }]
       : []
   })
-  return [...new Set(items.map((item) => item.key))].flatMap((key) => {
-    const group = items.filter((item) => item.key === key)
-    const origin = group.find((item) => item.evidence.changedAt !== undefined)
-    const first = [...group].sort((a, b) => a.report.reportedAt - b.report.reportedAt)[0]
-    if (!origin || !first || origin.evidence.changedAt === undefined) return []
-    const { entryId } = first.report
-    const { field } = first.evidence
+  const origins = items
+    .flatMap((item) =>
+      item.evidence.changedAt === undefined ? [] : [{ ...item, staleAt: item.evidence.changedAt }],
+    )
+    .filter(
+      (item, index, all) =>
+        all.findIndex((other) => other.key === item.key && other.staleAt === item.staleAt) === index,
+    )
+    .sort((a, b) => a.staleAt - b.staleAt)
+  return origins.map((origin) => {
+    const until =
+      origins.find((other) => other.key === origin.key && other.staleAt > origin.staleAt)?.staleAt ??
+      Number.POSITIVE_INFINITY
+    const within = (at: unknown) => typeof at === 'number' && at >= origin.staleAt && at < until
+    const group = items.filter((item) => item.key === origin.key && within(item.report.reportedAt))
+    const first = [...group].sort((a, b) => a.report.reportedAt - b.report.reportedAt)[0] ?? origin
+    const { entryId } = origin.report
+    const { field, expected, to } = origin.evidence
     const same = (record: JsonObject) =>
-      record.entryId === entryId && record.field === field && record.from === first.evidence.expected
+      record.entryId === entryId &&
+      record.field === field &&
+      record.from === expected &&
+      within(record.proposedAt)
     const proposal = proposals.find(same)
     const fix = changes.find(same)
-    return [
-      {
-        entryId,
-        field,
-        change: `${String(origin.evidence.expected)} -> ${origin.evidence.to}`,
-        staleAt: origin.evidence.changedAt,
-        detectedAt: first.report.reportedAt,
-        detectedBy: first.report.source,
-        runtimeReports: group.filter((item) => item.report.source === 'runtime').length,
-        proposedAt: typeof proposal?.proposedAt === 'number' ? proposal.proposedAt : null,
-        fixedAt: typeof fix?.at === 'number' ? fix.at : null,
-        rejected: rejections.some(same),
-      },
-    ]
+    return {
+      entryId,
+      field,
+      change: `${String(expected)} -> ${to}`,
+      staleAt: origin.staleAt,
+      detectedAt: first.report.reportedAt,
+      detectedBy: first.report.source,
+      runtimeReports: group.filter((item) => item.report.source === 'runtime').length,
+      proposedAt: typeof proposal?.proposedAt === 'number' ? proposal.proposedAt : null,
+      fixedAt: typeof fix?.at === 'number' ? fix.at : null,
+      rejected: rejections.some(same),
+    }
   })
 }
 

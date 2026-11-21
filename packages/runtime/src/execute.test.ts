@@ -210,20 +210,20 @@ test('a denied action is not executed', async () => {
 })
 
 test('only knowledge whose value an executed action carried counts as applied', async () => {
-  const entry = (id: string, value: string) => ({
+  const entry = (id: string, value: string, scope?: string) => ({
     id,
     kind: 'mapping' as const,
     owner: 'u1',
     confidence: 'confirmed' as const,
     taskTypes: [],
-    data: { value },
+    data: { value, ...(scope ? { scope } : {}) },
   })
   const carried: string[][] = []
   const { deps } = depsFor(
     runtimeOf(async function* (_, tools) {
       await tools.call({
         ...grant,
-        input: { system: 'iam', action: 'grant', params: { uid: 'u1', role_cd: 'RO' } },
+        input: { system: 'iam', action: 'grant', params: { uid: 'u1', sys: 'incident', role_cd: 'RO' } },
       })
       yield { type: 'done', ok: true, result: {} }
     }),
@@ -236,9 +236,16 @@ test('only knowledge whose value an executed action carried counts as applied', 
         return { status: 'allow' }
       },
     },
-    { ...input, knowledge: [entry('reader', 'RO'), entry('admin', 'AD')] },
+    {
+      ...input,
+      knowledge: [
+        entry('reader', 'RO', 'incident'),
+        entry('other-reader', 'RO', 'deployer'),
+        entry('admin', 'AD'),
+      ],
+    },
   )
   expect(carried).toEqual([['reader']])
-  expect(result.knowledgeUsed).toEqual(['reader', 'admin'])
+  expect(result.knowledgeUsed).toEqual(['reader', 'other-reader', 'admin'])
   expect(result.knowledgeApplied).toEqual(['reader'])
 })

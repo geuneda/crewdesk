@@ -3,10 +3,12 @@ import { join } from 'node:path'
 import {
   applyOverlay,
   type Distro,
+  distroFromSnapshot,
   knowledgeHash,
   loadDistro,
   type Overlay,
   parseOverlay,
+  parseSnapshot,
   type Snapshot,
   snapshotOf,
 } from '@crewdesk/distro'
@@ -55,17 +57,8 @@ const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
 const readOverlay = async (dir: string): Promise<Overlay> =>
   parseOverlay(await readFile(files(dir).overlay, 'utf8'))
 
-const distroFromLock = (base: Distro, lock: Snapshot): Distro => ({
-  ...base,
-  version: lock.version,
-  settings: lock.settings as unknown as Distro['settings'],
-  kb: {
-    entries: Object.entries(lock.knowledge).flatMap(([id, data]) => {
-      const entry = base.kb.entries.find((candidate) => candidate.id === id)
-      return entry ? [{ ...entry, data }] : []
-    }),
-  },
-})
+const readLock = async (dir: string): Promise<Snapshot> =>
+  parseSnapshot(JSON.parse(await readFile(files(dir).lock, 'utf8')))
 
 const writeResolved = async (dir: string, base: Distro, overlay: Overlay) => {
   const merged = applyOverlay(base, overlay)
@@ -100,7 +93,7 @@ export const init = async (options: { dir: string; org: string; base: string }):
 
 export const deploy = async (options: { dir: string; base: string }): Promise<Outcome> => {
   const base = await loadDistro(options.base)
-  const lock = JSON.parse(await readFile(files(options.dir).lock, 'utf8')) as Snapshot
+  const lock = await readLock(options.dir)
   if (lock.version !== base.version) {
     return {
       code: 1,
@@ -118,10 +111,18 @@ export const deploy = async (options: { dir: string; base: string }): Promise<Ou
 export const upgrade = async (options: { dir: string; base: string }): Promise<Outcome> => {
   const paths = files(options.dir)
   const next = await loadDistro(options.base)
-  const lock = JSON.parse(await readFile(paths.lock, 'utf8')) as Snapshot
+  const lock = await readLock(options.dir)
   if (lock.version === next.version) return { code: 0, lines: [`already at ${next.version}`] }
   const overlay = await readOverlay(options.dir)
-  const outcome = await checkUpgrade(distroFromLock(next, lock), next, overlay)
+  const outcome = await checkUpgrade(distroFromSnapshot(lock, next), next, overlay)
+  const examNotes = [
+    ...(outcome.questionsAdded.length > 0
+      ? [`new questions, not part of this check: ${outcome.questionsAdded.join(', ')}`]
+      : []),
+    ...(outcome.questionsRemoved.length > 0
+      ? [`questions removed by the new base, still checked: ${outcome.questionsRemoved.join(', ')}`]
+      : []),
+  ]
   if (outcome.status === 'conflict') {
     return {
       code: 1,
@@ -139,18 +140,24 @@ export const upgrade = async (options: { dir: string; base: string }): Promise<O
     return {
       code: 1,
       lines: [
-        `upgrade ${lock.version} -> ${next.version} stopped: eval accuracy fell from ${outcome.accuracyBefore} to ${outcome.accuracyAfter}`,
+        outcome.accuracyBefore === null
+          ? `upgrade ${lock.version} -> ${next.version} stopped: the locked base has no eval questions to check against`
+          : `upgrade ${lock.version} -> ${next.version} stopped: eval accuracy fell from ${outcome.accuracyBefore} to ${outcome.accuracyAfter}`,
+        ...examNotes,
       ],
     }
   }
   const document = parseDocument(await readFile(paths.overlay, 'utf8'))
   document.set('baseVersion', next.version)
+  await writeResolved(options.dir, next, { ...overlay, baseVersion: next.version })
   await writeFile(paths.overlay, document.toString())
   await writeFile(paths.lock, json(snapshotOf(next)))
-  await writeResolved(options.dir, next, { ...overlay, baseVersion: next.version })
   return {
     code: 0,
-    lines: [`upgraded ${overlay.org} ${lock.version} -> ${next.version}, eval ${outcome.accuracyAfter}`],
+    lines: [
+      `upgraded ${overlay.org} ${lock.version} -> ${next.version}, eval ${outcome.accuracyAfter}`,
+      ...examNotes,
+    ],
   }
 }
 

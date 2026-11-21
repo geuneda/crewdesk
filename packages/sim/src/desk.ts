@@ -73,7 +73,13 @@ export const createDesk = (deps: DeskDeps) => {
             release(paused)
           },
           onResume: async (resumed) => {
-            if (exclusive.has(resumed.id)) await acquire(resumed)
+            while (exclusive.has(resumed.id)) {
+              await acquire(resumed)
+              const placement = deps.place(resumed)
+              if (placement.kind !== 'wait') break
+              release(resumed)
+              await deps.intake.clock.sleep(placement.until - deps.intake.clock.now())
+            }
             await setStatus(resumed, 'running')
           },
         },

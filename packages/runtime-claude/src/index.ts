@@ -29,6 +29,9 @@ type Session = {
   request: RunRequest
   events: RuntimeEvent[]
   wake: (() => void) | null
+  idle: (() => void)[]
+  cancelled: boolean
+  abort: AbortController
   calls: number
   lastExecuteOk: boolean
   usageSeen: ReadonlySet<string>
@@ -66,26 +69,49 @@ export const createClaudeRuntime = (options: ClaudeRuntimeOptions): RuntimePort 
   }
 
   async function* stream(session: Session): AsyncGenerator<RuntimeEvent> {
-    for (;;) {
-      const [event, ...rest] = session.events
-      if (!event) {
-        await new Promise<void>((resolve) => {
-          session.wake = resolve
-        })
-        session.wake = null
-        continue
+    let settled = false
+    try {
+      for (;;) {
+        const [event, ...rest] = session.events
+        if (!event) {
+          const waiting = session.idle
+          session.idle = []
+          for (const release of waiting) release()
+          await new Promise<void>((resolve) => {
+            session.wake = resolve
+          })
+          session.wake = null
+          continue
+        }
+        session.events = rest
+        settled = event.type === 'done' || event.type === 'error' || event.type === 'approvalRequired'
+        yield event
+        if (settled) return
+        settled = false
       }
-      session.events = rest
-      yield event
-      if (event.type === 'done' || event.type === 'error' || event.type === 'approvalRequired') return
+    } finally {
+      if (!settled) {
+        session.cancelled = true
+        session.abort.abort()
+        for (const release of session.idle) release()
+      }
     }
   }
+
+  const consumed = (session: Session) =>
+    new Promise<void>((resolve) => {
+      session.idle = [...session.idle, resolve]
+      session.wake?.()
+    })
+
+  const stopped: ToolResult = { status: 'error', code: 'RUN_CANCELLED', message: 'the run was stopped' }
 
   const invoke = async (session: Session, first: ToolHost, name: string, input: JsonObject) => {
     const call: ToolCall = { callId: `${session.request.task.id}-call-${++session.calls}`, tool: name, input }
     push(session, { type: 'toolCall', ...call })
+    await consumed(session)
     let tools = first
-    let result = await tools.call(call)
+    let result = session.cancelled ? stopped : await tools.call(call)
     while (result.status === 'approvalRequired') {
       const resumeToken = `resume-${call.callId}`
       const resumed = new Promise<ToolHost>((resolve) => {
@@ -98,7 +124,8 @@ export const createClaudeRuntime = (options: ClaudeRuntimeOptions): RuntimePort 
         resumeToken,
       })
       tools = await resumed
-      result = await tools.call(call)
+      await consumed(session)
+      result = session.cancelled ? stopped : await tools.call(call)
     }
     if (name === 'domain.execute') session.lastExecuteOk = result.status === 'ok'
     push(session, {
@@ -188,7 +215,6 @@ export const createClaudeRuntime = (options: ClaudeRuntimeOptions): RuntimePort 
   }
 
   const pump = async (session: Session, tools: ToolHost) => {
-    const abortController = new AbortController()
     try {
       const messages = run({
         prompt: promptFor(session.request),
@@ -200,8 +226,9 @@ export const createClaudeRuntime = (options: ClaudeRuntimeOptions): RuntimePort 
           allowedTools: Object.keys(toolNames).map((name) => `mcp__${SERVER}__${name}`),
           mcpServers: { [SERVER]: serverFor(session, tools) },
           settingSources: [],
+          strictMcpConfig: true,
           persistSession: false,
-          abortController,
+          abortController: session.abort,
         },
       })
       for await (const message of messages) {
@@ -221,7 +248,7 @@ export const createClaudeRuntime = (options: ClaudeRuntimeOptions): RuntimePort 
         message: error instanceof Error ? error.message : String(error),
       })
     } finally {
-      abortController.abort()
+      session.abort.abort()
     }
   }
 
@@ -231,6 +258,9 @@ export const createClaudeRuntime = (options: ClaudeRuntimeOptions): RuntimePort 
         request,
         events: [],
         wake: null,
+        idle: [],
+        cancelled: false,
+        abort: new AbortController(),
         calls: 0,
         lastExecuteOk: false,
         usageSeen: new Set(),

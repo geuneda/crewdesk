@@ -109,6 +109,7 @@ test('the agent gets only the three tools, the mapped model, and the knowledge i
     maxTurns: 12,
     tools: [],
     settingSources: [],
+    strictMcpConfig: true,
     allowedTools: [
       'mcp__crewdesk__knowledge_lookup',
       'mcp__crewdesk__domain_query',
@@ -155,4 +156,26 @@ test('overload is a transient error, a crash is not', async () => {
     code: 'RUNTIME_FAILED',
     transient: false,
   })
+})
+
+test('when the consumer stops at the budget, a tool call the agent makes afterwards never reaches the host', async () => {
+  let hostCalls = 0
+  let toolOutcome: { isError?: boolean } | undefined
+  const greedy: RunAgent = async function* ({ options }) {
+    yield assistant('msg-1', '')
+    toolOutcome = await handlersOf(options).domain_execute?.({ system: 'iam', action: 'grant', params: {} })
+    yield result({ subtype: 'success', is_error: false, result: '', total_cost_usd: 0, num_turns: 1 })
+  }
+  const stream = runtimeWith(greedy).start(request, {
+    call: async () => {
+      hostCalls += 1
+      return { status: 'ok', output: {} }
+    },
+  })
+  for await (const event of stream) {
+    if (event.type === 'usage') break
+  }
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(hostCalls).toBe(0)
+  expect(toolOutcome).toMatchObject({ isError: true })
 })
