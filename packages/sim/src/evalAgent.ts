@@ -44,7 +44,12 @@ export const createScriptedEvalAgent =
         clock,
         lookup: (query) => knowledge.lookup(query),
         recordUsage: async () => {},
+        authorize: async () => ({ status: 'allow' }),
+        awaitDecision: async () => {},
+        onPause: async () => {},
+        onResume: async () => {},
         retryDelayMs: 0,
+        maxAttempts: 3,
       },
       { task, agent: `agent-${task.domain}`, model, knowledge: knowledge.fragment },
     )

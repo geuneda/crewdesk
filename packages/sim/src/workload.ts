@@ -73,20 +73,34 @@ const request = (random: RandomPort): { body: string; expected: DomainAction } =
   }
 }
 
-const renamed = (events: SimEvent[], at: number, value: string): string =>
+const paramSources: Record<string, string> = {
+  role_cd: 'iam/role_codes/cd',
+  env: 'deployer/envs/cd',
+  sev: 'incident/severities/cd',
+  grp: 'incident/groups/grp',
+  svc: 'deployer/services/svc',
+}
+
+const renamed = (events: SimEvent[], at: number, param: string, value: string): string =>
   events.reduce((current, event) => {
     if (event.at > at) return current
-    if (event.kind === 'codeChange' && current === event.from) return event.to
-    if (event.kind === 'reorg' && current === `G-${event.from}`) return `G-${event.to}`
+    if (
+      event.kind === 'codeChange' &&
+      current === event.from &&
+      paramSources[param] === `${event.system}/${event.resource}/${event.field}`
+    ) {
+      return event.to
+    }
+    if (event.kind === 'reorg' && param === 'grp' && current === `G-${event.from}`) return `G-${event.to}`
     return current
   }, value)
 
-const expectedAt = (events: SimEvent[], at: number, expected: DomainAction): DomainAction => ({
+export const expectedAt = (events: SimEvent[], at: number, expected: DomainAction): DomainAction => ({
   ...expected,
   params: Object.fromEntries(
     Object.entries(expected.params).map(([key, value]) => [
       key,
-      typeof value === 'string' ? renamed(events, at, value) : value,
+      typeof value === 'string' ? renamed(events, at, key, value) : value,
     ]),
   ),
 })
@@ -116,7 +130,8 @@ const workTimes = (random: RandomPort, config: WorkloadConfig): number[] => {
 
 export const generateWorkload = (random: RandomPort, config: WorkloadConfig): WorkItem[] => {
   const ordered = [...config.events].sort((a, b) => a.at - b.at)
-  return workTimes(random, config).map((at, index) => {
+  const times = workTimes(random, config).filter((at) => at < config.days * DAY)
+  return times.map((at, index) => {
     const sender = pick(random, people).uid
     const base = { id: `m${index + 1}`, channel: 'infra-requests', thread: `th${index + 1}`, sender, at }
     if (chance(random, config.chatterRatio)) {

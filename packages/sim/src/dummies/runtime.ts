@@ -109,6 +109,10 @@ export const createScriptedRuntime = (options: ScriptedRuntimeOptions): RuntimeP
         }
         return
       }
+      if (session.turn >= session.request.budget.turns) {
+        yield { type: 'error', code: 'BUDGET_EXCEEDED', transient: false, message: 'turn budget used up' }
+        return
+      }
       session.turn += 1
       yield usage(session)
       const step = last ? session.steps.next(last) : session.steps.next()

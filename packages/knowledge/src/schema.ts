@@ -89,6 +89,14 @@ export const actionTypesOf = (kb: KnowledgeBase): ActionType[] =>
     }
   })
 
+export const approverOf = (kb: KnowledgeBase, type: ActionType): string => {
+  const relation = kb.entries.find(
+    (entry) =>
+      entry.kind === 'relation' && entry.data.type === 'approves' && entry.data.actionType === type.id,
+  )
+  return typeof relation?.data.approver === 'string' ? relation.data.approver : type.owner
+}
+
 export const parseKnowledge = (sources: KnowledgeSource[]): KnowledgeBase => {
   const entries = sources.flatMap(({ name, text: body }) => {
     const document: unknown = parse(body)

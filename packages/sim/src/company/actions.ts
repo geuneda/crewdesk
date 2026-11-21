@@ -44,6 +44,7 @@ const grant: ActionHandler = (db, { uid, sys, role_cd }) => {
 }
 
 const release: ActionHandler = (db, { svc, ver, env }) => {
+  if (typeof ver !== 'string' || ver === '') return fail('INVALID_INPUT', 'ver is required')
   if (!has(rows(db, 'deployer', 'services'), { svc: svc ?? null })) {
     return fail('NOT_FOUND', `no service ${String(svc)}`, { field: 'svc', value: String(svc) })
   }

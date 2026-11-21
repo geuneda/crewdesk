@@ -21,6 +21,12 @@ importers:
         specifier: ^5.1.1
         version: 5.1.1(@types/node@22.20.5)(vite@8.3.8(@types/node@22.20.5)(yaml@2.9.1))
 
+  packages/approval:
+    dependencies:
+      '@crewdesk/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/core: {}
 
   packages/eval:
@@ -61,6 +67,9 @@ importers:
 
   packages/sim:
     dependencies:
+      '@crewdesk/approval':
+        specifier: workspace:*
+        version: link:../approval
       '@crewdesk/core':
         specifier: workspace:*
         version: link:../core

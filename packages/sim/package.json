@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@crewdesk/approval": "workspace:*",
     "@crewdesk/core": "workspace:*",
     "@crewdesk/eval": "workspace:*",
     "@crewdesk/intake": "workspace:*",

@@ -56,7 +56,8 @@ test('the rule filter passes mentions, direct messages, and active threads only'
   const quiet = { ...message, mentionsAgent: false }
   expect(passesRuleFilter(message, new Set())).toBe(true)
   expect(passesRuleFilter({ ...quiet, isDirect: true }, new Set())).toBe(true)
-  expect(passesRuleFilter(quiet, new Set(['th']))).toBe(true)
+  expect(passesRuleFilter(quiet, new Set(['c/th']))).toBe(true)
+  expect(passesRuleFilter(quiet, new Set(['other/th']))).toBe(false)
   expect(passesRuleFilter(quiet, new Set())).toBe(false)
 })
 

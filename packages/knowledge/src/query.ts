@@ -1,25 +1,9 @@
 import { createHash } from 'node:crypto'
-import type { Json, JsonObject, KnowledgeEntry } from '@crewdesk/core'
+import { canonicalJson, type Json, type JsonObject, type KnowledgeEntry } from '@crewdesk/core'
 import type { KnowledgeBase } from './schema.ts'
 
-const canonical = (value: Json): Json => {
-  if (Array.isArray(value)) return value.map(canonical)
-  if (typeof value !== 'object' || value === null) return value
-  return Object.fromEntries(
-    Object.keys(value)
-      .sort()
-      .flatMap((key) => {
-        const item = value[key]
-        return item === undefined ? [] : [[key, canonical(item)]]
-      }),
-  )
-}
-
 export const hashOf = (value: Json): string =>
-  createHash('sha256')
-    .update(JSON.stringify(canonical(value)))
-    .digest('hex')
-    .slice(0, 16)
+  createHash('sha256').update(canonicalJson(value)).digest('hex').slice(0, 16)
 
 export const entryHash = (entry: KnowledgeEntry): string =>
   hashOf({ kind: entry.kind, confidence: entry.confidence, taskTypes: entry.taskTypes, data: entry.data })

@@ -18,6 +18,7 @@ export type CloseDeps = {
   systems: DomainSystemPort
   actionTypes(): ActionType[]
   replyModel: string
+  reportIncident(action: ExecutedAction['action']): Promise<void>
   recordUsage(report: UsageReport): Promise<void>
 }
 
@@ -26,12 +27,14 @@ const verifyAction = async (deps: CloseDeps, { action }: ExecutedAction): Promis
     .actionTypes()
     .find((type) => type.system === action.system && type.action === action.action)
   if (!spec?.verify) return true
+  const pairs = spec.verify.match.map((field) => [field, action.params[field]] as const)
   const where = Object.fromEntries(
-    spec.verify.match.flatMap((field) => {
-      const value = action.params[field]
-      return typeof value === 'string' || typeof value === 'number' ? [[field, value]] : []
-    }),
+    pairs.filter(
+      (pair): pair is readonly [string, string | number] =>
+        typeof pair[1] === 'string' || typeof pair[1] === 'number',
+    ),
   )
+  if (Object.keys(where).length !== pairs.length) return false
   const rows = await deps.systems.query({ system: action.system, resource: spec.verify.resource, where })
   return rows.ok && rows.value.length > 0
 }
@@ -44,6 +47,9 @@ export const closeTask = async (
   const succeeded = execution.actions.filter((done) => done.result.ok)
   const checks = await Promise.all(succeeded.map((done) => verifyAction(deps, done)))
   const verified = checks.every(Boolean)
+  await Promise.all(
+    succeeded.filter((_, index) => !checks[index]).map((done) => deps.reportIncident(done.action)),
+  )
   const ok = execution.ok && verified
   const reason = execution.ok && !verified ? 'VERIFICATION_FAILED' : execution.reason
   const task: Task = { ...input.task, status: ok ? 'done' : 'escalated' }

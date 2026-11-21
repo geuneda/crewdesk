@@ -77,6 +77,11 @@ export type RuntimeEvent =
   | { type: 'done'; ok: boolean; result: JsonObject }
   | { type: 'error'; code: string; transient: boolean; message: string }
 
+export type Authorization =
+  | { status: 'allow' }
+  | { status: 'pending'; approvalId: string }
+  | { status: 'denied'; code: string; message: string }
+
 export type DomainError = { code: string; message: string; detail?: JsonObject }
 export type DomainResult<T> = { ok: true; value: T } | { ok: false; error: DomainError }
 export type DomainQuery = { system: string; resource: string; where?: Record<string, string | number> }

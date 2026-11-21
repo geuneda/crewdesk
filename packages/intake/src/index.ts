@@ -24,8 +24,11 @@ export type IntakeDeps = {
   recordUsage(report: UsageReport): Promise<void>
 }
 
+export const threadKey = (item: { channel: string; thread: string }): string =>
+  `${item.channel}/${item.thread}`
+
 export const passesRuleFilter = (message: InboundMessage, activeThreads: ReadonlySet<string>): boolean =>
-  message.mentionsAgent || message.isDirect || activeThreads.has(message.thread)
+  message.mentionsAgent || message.isDirect || activeThreads.has(threadKey(message))
 
 export const handleMessage = async (
   deps: IntakeDeps,

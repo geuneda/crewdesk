@@ -81,6 +81,15 @@ export const runtimeContract = (
       expect(rest.at(-1)?.type).toBe('done')
     })
 
+    test('a run never starts more turns than the budget allows', async () => {
+      const { runtime, settle } = await make()
+      const { host } = recordingHost(() => ({ status: 'ok', output: {} }))
+      const tight = { ...request, budget: { ...request.budget, turns: 1 } }
+      const events = await settle(collect(runtime.start(tight, host)))
+      expect(events.filter((e) => e.type === 'usage').length).toBeLessThanOrEqual(1)
+      expect(terminal(events.at(-1))).toBe(true)
+    })
+
     test('resume with an unknown token ends with a non-transient error', async () => {
       const { runtime, settle } = await make()
       const { host } = recordingHost(() => ({ status: 'ok', output: {} }))

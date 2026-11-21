@@ -1,9 +1,14 @@
 import { expect, test } from 'vitest'
 import { loadBaseKnowledge } from './company/base.ts'
-import { defaultSimConfig, runSimulation, type SimConfig, summarize } from './engine.ts'
+import { defaultSimConfig, runSimulation, type SimConfig } from './engine.ts'
+import { summarize } from './reports/summary.ts'
 import { DAY, HOUR } from './time.ts'
 
-const config: SimConfig = { ...defaultSimConfig, kb: await loadBaseKnowledge() }
+const config: SimConfig = {
+  ...defaultSimConfig,
+  kb: await loadBaseKnowledge(),
+  approvals: { ...defaultSimConfig.approvals, enabled: false },
+}
 
 test('the same seed gives the same 30 day result', async () => {
   const [first, second, other] = await Promise.all([
@@ -64,4 +69,11 @@ test('without knowledge the scripted agent fails every code value task', async (
   expect(summary.tasks).toBeGreaterThan(30)
   expect(summary.done).toBe(0)
   expect(summary.reasons.AGENT_REPORTED_FAILURE).toBe(summary.tasks)
+})
+
+test('requests outside the simulated period are not counted', async () => {
+  const late = { at: 1 * DAY + 10 * HOUR, kind: 'burst' as const, durationMs: 2 * HOUR, factor: 5 }
+  const calm = await runSimulation({ ...config, days: 1 })
+  const withLateBurst = await runSimulation({ ...config, days: 1, events: [late] })
+  expect(withLateBurst.messages).toBe(calm.messages)
 })

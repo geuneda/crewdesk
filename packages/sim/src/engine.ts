@@ -1,7 +1,16 @@
-import type { Domain, DomainAction, JsonObject, OutboundMessage, Task } from '@crewdesk/core'
-import { actionTypesOf, catalogOf, fragmentFor, type KnowledgeBase, lookup } from '@crewdesk/knowledge'
+import { type ApprovalRule, createApprovalDesk } from '@crewdesk/approval'
+import type { ApprovalRecord, Domain, DomainAction, JsonObject, OutboundMessage, Task } from '@crewdesk/core'
+import {
+  actionTypesOf,
+  approverOf,
+  catalogOf,
+  fragmentFor,
+  type KnowledgeBase,
+  lookup,
+} from '@crewdesk/knowledge'
+import { type ApproverPolicy, createVirtualApprovers } from './approver.ts'
 import { companyActions } from './company/actions.ts'
-import { buildCompanyDb } from './company/data.ts'
+import { buildCompanyDb, people } from './company/data.ts'
 import { companyScript } from './company/scripts.ts'
 import { createDesk } from './desk.ts'
 import { createMemoryChannel } from './dummies/channel.ts'
@@ -13,7 +22,7 @@ import { createScriptedRuntime, defaultTokenModel, type TokenModel } from './dum
 import { createSqliteStore } from './dummies/store.ts'
 import { createMemorySystems, type Db } from './dummies/systems.ts'
 import { applyEvent, failureRateAt, type SimEvent } from './events.ts'
-import { DAY, MINUTE } from './time.ts'
+import { DAY, HOUR, isWorkday, MINUTE } from './time.ts'
 import { generateWorkload } from './workload.ts'
 
 export type SimConfig = {
@@ -26,6 +35,7 @@ export type SimConfig = {
   events: SimEvent[]
   kb: KnowledgeBase
   knowledgeEnabled: boolean
+  approvals: { enabled: boolean } & ApproverPolicy
   tokens: TokenModel
 }
 
@@ -35,6 +45,9 @@ export type SimResult = {
   traces: JsonObject[]
   usage: JsonObject[]
   outbox: OutboundMessage[]
+  approvals: ApprovalRecord[]
+  ruleChanges: JsonObject[]
+  rules: ApprovalRule[]
   expected: Record<string, DomainAction>
   db: Db
 }
@@ -48,6 +61,7 @@ export const defaultSimConfig = {
   failureRate: 0.01,
   events: [],
   knowledgeEnabled: true,
+  approvals: { enabled: true, rejectRate: 0.02, adminRejectRate: 0.3, modifyRate: 0.03 },
   tokens: defaultTokenModel,
 } satisfies Partial<SimConfig>
 
@@ -70,12 +84,34 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
   })
   const queues = Object.fromEntries(domains.map((domain) => [domain, createMemoryQueue<Task>()]))
   const recordUsage = (report: JsonObject) => store.append('usage', { ...report, at: clock.now() })
+  let errors: unknown[] = []
+  const onError = (error: unknown) => {
+    errors = [...errors, error]
+  }
+
+  const approvals = createApprovalDesk({
+    store,
+    clock,
+    actionTypes: () => actionTypesOf(config.kb),
+    approverFor: (type) => approverOf(config.kb, type),
+    roleOf: (uid) => (people.find((person) => person.uid === uid)?.lead ? 'lead' : 'member'),
+    onPending: (pending) => void approve(pending).catch(onError),
+    notify: (approver, text) =>
+      channel.send({ channel: `dm-${approver}`, thread: 'approvals', body: text, at: clock.now() }),
+  })
+  const approve = createVirtualApprovers({
+    clock,
+    random: createSeededRandom(config.seed + 2),
+    policy: config.approvals,
+    decide: approvals.decide,
+  })
 
   const desk = createDesk({
     store,
     queueFor: (domain) => queues[domain] ?? createMemoryQueue<Task>(),
     knowledgeFor: (task) => (config.knowledgeEnabled ? fragmentFor(config.kb, task.taskType) : []),
     workModel: () => 'medium',
+    onError,
     intake: {
       channel,
       model,
@@ -94,7 +130,10 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       clock,
       lookup: async (input) => (config.knowledgeEnabled ? lookup(config.kb, input) : []),
       recordUsage,
+      authorize: config.approvals.enabled ? approvals.authorize : async () => ({ status: 'allow' }),
+      awaitDecision: approvals.awaitDecision,
       retryDelayMs: MINUTE,
+      maxAttempts: 3,
     },
     close: {
       channel,
@@ -104,6 +143,7 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       systems,
       actionTypes: () => actionTypesOf(config.kb),
       replyModel: 'small',
+      reportIncident: approvals.reportIncident,
       recordUsage,
     },
   })
@@ -112,7 +152,7 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
     for (const { message } of workload) {
       await clock.sleep(message.at - clock.now())
       channel.inject(message)
-      for (const polled of await channel.poll()) void desk.onMessage(polled)
+      for (const polled of await channel.poll()) void desk.onMessage(polled).catch(onError)
     }
   }
   const inject = async () => {
@@ -121,9 +161,17 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       applyEvent(systems, event)
     }
   }
-  void feed()
-  void inject()
+  const daily = async () => {
+    for (let day = 0; day < config.days; day += 1) {
+      await clock.sleep(day * DAY + 18 * HOUR - clock.now())
+      if (isWorkday(day)) approvals.proposePromotions()
+    }
+  }
+  void feed().catch(onError)
+  void inject().catch(onError)
+  void daily().catch(onError)
   await clock.runUntil(config.days * DAY)
+  if (errors.length > 0) throw new AggregateError(errors, 'the simulation hit internal errors')
 
   return {
     messages: workload.length,
@@ -131,42 +179,12 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
     traces: await store.list('trace'),
     usage: await store.list('usage'),
     outbox: channel.outbox(),
+    approvals: (await store.list('approval')) as ApprovalRecord[],
+    ruleChanges: await store.list('ruleChange'),
+    rules: approvals.rules(),
     expected: Object.fromEntries(
       workload.flatMap((item) => (item.expected ? [[`task-${item.message.id}`, item.expected]] : [])),
     ),
     db: systems.snapshot(),
-  }
-}
-
-type TraceAction = { action: DomainAction; result: { ok: boolean } }
-
-export const summarize = (result: SimResult) => {
-  const count = (status: Task['status']) => result.tasks.filter((task) => task.status === status).length
-  const correct = result.traces.filter((trace) => {
-    const last = (trace.actions as unknown as TraceAction[]).filter((done) => done.result.ok).at(-1)
-    return (
-      trace.ok === true &&
-      JSON.stringify(last?.action) === JSON.stringify(result.expected[String(trace.taskId)])
-    )
-  }).length
-  const reasonOf = (trace: JsonObject) => (typeof trace.reason === 'string' ? trace.reason : 'OK')
-  const reasons = Object.fromEntries(
-    [...new Set(result.traces.map(reasonOf))].map((reason) => [
-      reason,
-      result.traces.filter((trace) => reasonOf(trace) === reason).length,
-    ]),
-  )
-  return {
-    messages: result.messages,
-    requests: Object.keys(result.expected).length,
-    tasks: result.tasks.length,
-    done: count('done'),
-    escalated: count('escalated'),
-    correct,
-    reasons,
-    tokens: result.usage.reduce((sum, record) => {
-      const usage = record.usage as { inputTokens: number; outputTokens: number; cachedTokens: number }
-      return sum + usage.inputTokens + usage.outputTokens + usage.cachedTokens
-    }, 0),
   }
 }

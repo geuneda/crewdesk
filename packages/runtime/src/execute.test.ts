@@ -42,7 +42,12 @@ const depsFor = (runtime: RuntimePort) => {
     },
     lookup: async () => [],
     recordUsage: async () => {},
+    authorize: async () => ({ status: 'allow' }),
+    awaitDecision: async () => {},
+    onPause: async () => {},
+    onResume: async () => {},
     retryDelayMs: 1,
+    maxAttempts: 3,
   }
   return { deps, executed }
 }
@@ -114,5 +119,90 @@ test('rejects malformed tool input and unknown tools', async () => {
     expect.objectContaining({ status: 'error', code: 'INVALID_INPUT' }),
     expect.objectContaining({ status: 'error', code: 'UNKNOWN_TOOL' }),
   ])
+  expect(executed).toHaveLength(0)
+})
+
+test('a retry with the same parameters in another order does not run the action again', async () => {
+  const { deps, executed } = depsFor(
+    runtimeOf(async function* (attempt, tools) {
+      const params = attempt === 1 ? { uid: 'u1', sys: 'iam' } : { sys: 'iam', uid: 'u1' }
+      await tools.call({ ...grant, input: { system: 'iam', action: 'grant', params } })
+      if (attempt === 1) {
+        yield { type: 'error', code: 'RUNTIME_UNAVAILABLE', transient: true, message: 'x' }
+        return
+      }
+      yield { type: 'done', ok: true, result: {} }
+    }),
+  )
+  await executeTask(deps, input)
+  expect(executed).toHaveLength(1)
+})
+
+test('a retry gets only the budget that is left, and attempts are capped', async () => {
+  const budgets: number[] = []
+  let attempts = 0
+  const { deps } = depsFor({
+    start: async function* (request) {
+      budgets.push(request.budget.turns)
+      attempts += 1
+      yield usage
+      yield { type: 'error', code: `E${attempts}`, transient: true, message: 'x' }
+    },
+    resume: async function* () {},
+  })
+  const result = await executeTask(deps, {
+    ...input,
+    task: { ...task, budget: { ...task.budget, turns: 10 } },
+  })
+  expect(budgets).toEqual([10, 9, 8])
+  expect(result.reason).toBe('RETRY_LIMIT')
+})
+
+test('a pending approval pauses the run and resumes it after the decision', async () => {
+  const order: string[] = []
+  let decided = false
+  const { deps, executed } = depsFor({
+    start: async function* (_, tools) {
+      const result = await tools.call(grant)
+      order.push(`start:${result.status}`)
+      yield { type: 'approvalRequired', callId: 'c1', approvalId: 'ap-1', resumeToken: 'r1' }
+    },
+    resume: async function* (token, tools) {
+      const result = await tools.call(grant)
+      order.push(`resume:${token}:${result.status}`)
+      yield { type: 'done', ok: true, result: {} }
+    },
+  })
+  const result = await executeTask(
+    {
+      ...deps,
+      authorize: async () => (decided ? { status: 'allow' } : { status: 'pending', approvalId: 'ap-1' }),
+      awaitDecision: async (approvalId) => {
+        order.push(`wait:${approvalId}`)
+        decided = true
+      },
+      onPause: async () => void order.push('pause'),
+      onResume: async () => void order.push('resume'),
+    },
+    input,
+  )
+  expect(order).toEqual(['start:approvalRequired', 'pause', 'wait:ap-1', 'resume', 'resume:r1:ok'])
+  expect(result.ok).toBe(true)
+  expect(executed).toHaveLength(1)
+})
+
+test('a denied action is not executed', async () => {
+  const seen: unknown[] = []
+  const { deps, executed } = depsFor(
+    runtimeOf(async function* (_, tools) {
+      seen.push(await tools.call(grant))
+      yield { type: 'done', ok: false, result: {} }
+    }),
+  )
+  await executeTask(
+    { ...deps, authorize: async () => ({ status: 'denied', code: 'ACTION_NOT_PERMITTED', message: 'no' }) },
+    input,
+  )
+  expect(seen).toEqual([expect.objectContaining({ status: 'error', code: 'ACTION_NOT_PERMITTED' })])
   expect(executed).toHaveLength(0)
 })

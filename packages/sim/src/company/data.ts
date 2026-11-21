@@ -17,6 +17,7 @@ export const people = surnames.flatMap((surname, i) =>
       uid: `u${1001 + index}`,
       name: surname + given,
       org: orgs[index % orgs.length]?.code ?? 'PLT',
+      lead: index < orgs.length,
     }
   }),
 )

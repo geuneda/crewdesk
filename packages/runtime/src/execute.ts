@@ -1,18 +1,20 @@
-import type {
-  ClockPort,
-  DomainAction,
-  DomainResult,
-  DomainSystemPort,
-  Json,
-  JsonObject,
-  KnowledgeEntry,
-  RunRequest,
-  RuntimeEvent,
-  RuntimePort,
-  Task,
-  ToolHost,
-  ToolResult,
-  UsageReport,
+import {
+  type Authorization,
+  type Budget,
+  type ClockPort,
+  canonicalJson,
+  type DomainAction,
+  type DomainResult,
+  type DomainSystemPort,
+  type Json,
+  type JsonObject,
+  type KnowledgeEntry,
+  type RuntimeEvent,
+  type RuntimePort,
+  type Task,
+  type ToolHost,
+  type ToolResult,
+  type UsageReport,
 } from '@crewdesk/core'
 
 export type ExecutionDeps = {
@@ -21,7 +23,12 @@ export type ExecutionDeps = {
   clock: ClockPort
   lookup(input: JsonObject, task: Task): Promise<KnowledgeEntry[]>
   recordUsage(report: UsageReport): Promise<void>
+  authorize(task: Task, action: DomainAction): Promise<Authorization>
+  awaitDecision(approvalId: string): Promise<void>
+  onPause(task: Task): Promise<void>
+  onResume(task: Task): Promise<void>
   retryDelayMs: number
+  maxAttempts: number
 }
 
 export type ExecutionInput = { task: Task; agent: string; model: string; knowledge: KnowledgeEntry[] }
@@ -67,6 +74,7 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
   let lookedUp: string[] = []
   let tokens = 0
   let turns = 0
+  let attempts = 1
   let errorCounts: Record<string, number> = {}
 
   const tools: ToolHost = {
@@ -93,9 +101,12 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
         if (typeof system !== 'string' || typeof action !== 'string' || !isRecord(params))
           return invalid(tool)
         const request: DomainAction = { system, action, params: params as JsonObject }
-        const key = JSON.stringify(request)
-        const prior = actions.find((done) => done.result.ok && JSON.stringify(done.action) === key)
+        const key = canonicalJson(request)
+        const prior = actions.find((done) => done.result.ok && canonicalJson(done.action) === key)
         if (prior) return toToolResult(prior.result)
+        const permit = await deps.authorize(task, request)
+        if (permit.status === 'pending') return { status: 'approvalRequired', approvalId: permit.approvalId }
+        if (permit.status === 'denied') return { status: 'error', code: permit.code, message: permit.message }
         const result = await deps.systems.execute(request)
         actions = [...actions, { action: request, result }]
         return toToolResult(result)
@@ -118,7 +129,12 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
     return { type: 'ended' }
   }
 
-  const request: RunRequest = { ...input, budget: task.budget }
+  const remaining = (): Budget => ({
+    tokens: Math.max(0, task.budget.tokens - tokens),
+    turns: Math.max(0, task.budget.turns - turns),
+    subagents: task.budget.subagents,
+  })
+  const start = () => deps.runtime.start({ ...input, budget: remaining() }, tools)
   const finish = (ok: boolean, result: JsonObject, reason?: string): ExecutionResult => ({
     ok,
     ...(reason ? { reason } : {}),
@@ -129,16 +145,27 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
     tokens,
   })
 
+  let stream = start()
   for (;;) {
-    const stop = await consume(deps.runtime.start(request, tools))
+    const stop = await consume(stream)
     if (stop.type === 'done')
       return finish(stop.ok, stop.result, stop.ok ? undefined : 'AGENT_REPORTED_FAILURE')
     if (stop.type === 'budgetExceeded') return finish(false, {}, 'BUDGET_EXCEEDED')
     if (stop.type === 'ended') return finish(false, {}, 'STREAM_ENDED_EARLY')
-    if (stop.type === 'approvalRequired') return finish(false, {}, 'APPROVAL_NOT_SUPPORTED')
+    if (stop.type === 'approvalRequired') {
+      await deps.onPause(task)
+      await deps.awaitDecision(stop.approvalId)
+      await deps.onResume(task)
+      stream = deps.runtime.resume(stop.resumeToken, tools)
+      continue
+    }
+    if (stop.code === 'BUDGET_EXCEEDED') return finish(false, {}, 'BUDGET_EXCEEDED')
     const seen = (errorCounts[stop.code] ?? 0) + 1
     errorCounts = { ...errorCounts, [stop.code]: seen }
     if (!stop.transient || seen >= 2) return finish(false, {}, `RUNTIME_ERROR:${stop.code}`)
+    if (attempts >= deps.maxAttempts) return finish(false, {}, 'RETRY_LIMIT')
+    attempts += 1
     await deps.clock.sleep(deps.retryDelayMs)
+    stream = start()
   }
 }
