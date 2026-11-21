@@ -4,6 +4,7 @@ import {
   type ClockPort,
   canonicalJson,
   type DomainAction,
+  type DomainError,
   type DomainResult,
   type DomainSystemPort,
   type Json,
@@ -23,7 +24,8 @@ export type ExecutionDeps = {
   clock: ClockPort
   lookup(input: JsonObject, task: Task): Promise<KnowledgeEntry[]>
   recordUsage(report: UsageReport): Promise<void>
-  authorize(task: Task, action: DomainAction): Promise<Authorization>
+  authorize(task: Task, action: DomainAction, used: KnowledgeEntry[]): Promise<Authorization>
+  onDomainError(task: Task, error: DomainError, used: KnowledgeEntry[]): Promise<void>
   awaitDecision(approvalId: string): Promise<void>
   onExecuted(task: Task, action: DomainAction, ok: boolean): Promise<void>
   onPause(task: Task): Promise<void>
@@ -72,7 +74,8 @@ const invalid = (tool: string): ToolResult => ({
 export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): Promise<ExecutionResult> => {
   const { task } = input
   let actions: ExecutedAction[] = []
-  let lookedUp: string[] = []
+  let lookedUp: KnowledgeEntry[] = []
+  const used = () => [...input.knowledge, ...lookedUp]
   let tokens = 0
   let turns = 0
   let attempts = 1
@@ -82,7 +85,7 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
     call: async ({ tool, input: args }) => {
       if (tool === 'knowledge.lookup') {
         const entries = await deps.lookup(args, task)
-        lookedUp = [...lookedUp, ...entries.map((entry) => entry.id)]
+        lookedUp = [...lookedUp, ...entries]
         return { status: 'ok', output: { entries } }
       }
       const { system, resource, action, where, params } = args
@@ -105,12 +108,13 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
         const key = canonicalJson(request)
         const prior = actions.find((done) => done.result.ok && canonicalJson(done.action) === key)
         if (prior) return toToolResult(prior.result)
-        const permit = await deps.authorize(task, request)
+        const permit = await deps.authorize(task, request, used())
         if (permit.status === 'pending') return { status: 'approvalRequired', approvalId: permit.approvalId }
         if (permit.status === 'denied') return { status: 'error', code: permit.code, message: permit.message }
         const result = await deps.systems.execute(request)
         actions = [...actions, { action: request, result }]
         await deps.onExecuted(task, request, result.ok)
+        if (!result.ok) await deps.onDomainError(task, result.error, used())
         return toToolResult(result)
       }
       return { status: 'error', code: 'UNKNOWN_TOOL', message: tool }
@@ -141,7 +145,7 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
     ok,
     ...(reason ? { reason } : {}),
     actions,
-    knowledgeUsed: [...new Set([...input.knowledge.map((entry) => entry.id), ...lookedUp])],
+    knowledgeUsed: [...new Set(used().map((entry) => entry.id))],
     result,
     turns,
     tokens,

@@ -1,7 +1,7 @@
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 export type JsonObject = { [key: string]: Json }
 
-export type Domain = 'access' | 'deploy' | 'incident'
+export type Domain = 'access' | 'deploy' | 'incident' | 'knowledge'
 export type Risk = 'low' | 'medium' | 'high'
 export type Urgency = 'low' | 'normal' | 'high'
 export type TaskStatus =
@@ -40,6 +40,7 @@ export type ActionType = {
   reversible: boolean
   owner: string
   approvalLevel: ApprovalLevel
+  maxLevel?: ApprovalLevel
   promoteAfter: number
   conditionFields: string[]
   verify?: { resource: string; match: string[] }

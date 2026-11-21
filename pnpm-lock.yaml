@@ -27,6 +27,18 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/batch:
+    dependencies:
+      '@crewdesk/approval':
+        specifier: workspace:*
+        version: link:../approval
+      '@crewdesk/core':
+        specifier: workspace:*
+        version: link:../core
+      '@crewdesk/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
+
   packages/core: {}
 
   packages/eval:
@@ -76,6 +88,9 @@ importers:
       '@crewdesk/approval':
         specifier: workspace:*
         version: link:../approval
+      '@crewdesk/batch':
+        specifier: workspace:*
+        version: link:../batch
       '@crewdesk/core':
         specifier: workspace:*
         version: link:../core

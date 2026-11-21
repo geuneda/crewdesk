@@ -46,14 +46,48 @@ entries:
     owner: u1001
     confidence: confirmed
     evidence: iam/accounts 의 플랫폼팀 리더 계정
-    data: { type: approves, actionType: iam.grant, approver: u1001 }
+    data: { type: approves, actionType: iam.grant, approver: u1001, sources: { approver: iam/approvers/uid } }
   - id: approves.deployer.release
     kind: relation
     owner: u1002
     confidence: confirmed
-    data: { type: approves, actionType: deployer.release, approver: u1002 }
+    data:
+      {
+        type: approves,
+        actionType: deployer.release,
+        approver: u1002,
+        sources: { approver: iam/approvers/uid },
+      }
   - id: approves.incident.open
     kind: relation
     owner: u1003
     confidence: confirmed
-    data: { type: approves, actionType: incident.open, approver: u1003 }
+    data:
+      { type: approves, actionType: incident.open, approver: u1003, sources: { approver: iam/approvers/uid } }
+  - id: actionType.knowledge.patchMapping
+    kind: entity
+    owner: u1001
+    confidence: confirmed
+    data:
+      type: ActionType
+      system: knowledge
+      action: patchMapping
+      domain: knowledge
+      reversible: true
+      approvalLevel: always
+      promoteAfter: 3
+      conditionFields: [concept, field]
+  - id: actionType.knowledge.patchRelation
+    kind: entity
+    owner: u1001
+    confidence: confirmed
+    data:
+      type: ActionType
+      system: knowledge
+      action: patchRelation
+      domain: knowledge
+      reversible: true
+      approvalLevel: always
+      maxLevel: always
+      promoteAfter: 3
+      conditionFields: [concept, field]

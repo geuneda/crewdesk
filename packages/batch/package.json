@@ -1,0 +1,14 @@
+{
+  "name": "@crewdesk/batch",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@crewdesk/approval": "workspace:*",
+    "@crewdesk/core": "workspace:*",
+    "@crewdesk/knowledge": "workspace:*"
+  }
+}

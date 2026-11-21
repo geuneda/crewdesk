@@ -19,6 +19,7 @@ export type CloseDeps = {
   actionTypes(): ActionType[]
   replyModel: string
   reportIncident(action: ExecutedAction['action']): Promise<void>
+  markUsedOk(entryIds: string[]): Promise<void>
   recordUsage(report: UsageReport): Promise<void>
 }
 
@@ -51,6 +52,7 @@ export const closeTask = async (
     succeeded.filter((_, index) => !checks[index]).map((done) => deps.reportIncident(done.action)),
   )
   const ok = execution.ok && verified
+  if (ok) await deps.markUsedOk(execution.knowledgeUsed)
   const reason = execution.ok && !verified ? 'VERIFICATION_FAILED' : execution.reason
   const task: Task = { ...input.task, status: ok ? 'done' : 'escalated' }
   const reply = await deps.model.reply({

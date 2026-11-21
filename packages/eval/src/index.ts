@@ -25,6 +25,7 @@ export type EvalOptions = {
   model: string
   runs?: number
   force?: boolean
+  environment?: string
 }
 
 export type QuestionResult = { id: string; pass: boolean; cached: boolean; usedEntryIds: string[] }
@@ -82,6 +83,7 @@ const cacheKey = (options: EvalOptions, question: Question, lookups: JsonObject[
   hashOf({
     question,
     runs: runsOf(options),
+    environment: options.environment ?? '',
     catalogItem: catalogItemOf(options, question),
     promptVersion: options.promptVersion,
     model: options.model,

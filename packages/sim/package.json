@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@crewdesk/approval": "workspace:*",
+    "@crewdesk/batch": "workspace:*",
     "@crewdesk/core": "workspace:*",
     "@crewdesk/eval": "workspace:*",
     "@crewdesk/intake": "workspace:*",

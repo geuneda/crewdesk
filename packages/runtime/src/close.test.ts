@@ -53,6 +53,7 @@ const run = async (params: JsonObject, rows: JsonObject[]) => {
     replyModel: 'small',
     recordUsage: async () => {},
     reportIncident: async (action) => void incidents.push(action),
+    markUsedOk: async () => {},
   }
   const action = { system: 'deployer', action: 'release', params }
   const closed = await closeTask(

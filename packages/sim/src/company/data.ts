@@ -53,6 +53,11 @@ export const buildCompanyDb = (): Db => ({
       { sys: 'iam', cd: 'AD' },
     ],
     grants: [],
+    approvers: [
+      { action: 'iam.grant', uid: 'u1001' },
+      { action: 'deployer.release', uid: 'u1002' },
+      { action: 'incident.open', uid: 'u1003' },
+    ],
   },
   deployer: {
     services,

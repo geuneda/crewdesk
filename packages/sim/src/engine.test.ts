@@ -33,9 +33,9 @@ test('requests flow from intake to close and chatter is ignored', async () => {
   expect(result.db.iam?.grants?.length).toBeGreaterThan(0)
 })
 
-test('a code change in the source system breaks tasks that rely on the old code', async () => {
+test('a code change in the source system breaks tasks until the knowledge is fixed', async () => {
   const change = {
-    at: 2 * DAY,
+    at: 2 * DAY + 10 * HOUR,
     kind: 'codeChange' as const,
     system: 'iam',
     resource: 'role_codes',
@@ -43,9 +43,14 @@ test('a code change in the source system breaks tasks that rely on the old code'
     from: 'DP',
     to: 'DV',
   }
-  const summary = summarize(await runSimulation({ ...config, days: 5, failureRate: 0, events: [change] }))
+  const result = await runSimulation({ ...config, days: 5, failureRate: 0, events: [change] })
+  const summary = summarize(result)
   expect(summary.reasons.AGENT_REPORTED_FAILURE).toBeGreaterThan(0)
   expect(summary.done + summary.escalated).toBe(summary.tasks)
+  expect(result.knowledgeChanges).toEqual([
+    expect.objectContaining({ entryId: 'role.deployer.deployer', field: 'value', from: 'DP', to: 'DV' }),
+  ])
+  expect(result.kb.entries.find((entry) => entry.id === 'role.deployer.deployer')?.data.value).toBe('DV')
 })
 
 test('a runtime outage escalates after the same error repeats', async () => {

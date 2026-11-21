@@ -18,19 +18,47 @@ entries:
     kind: mapping
     owner: u1003
     confidence: confirmed
-    data: { concept: group, key: PLT, name: 플랫폼팀, value: G-PLT }
+    data:
+      {
+        concept: group,
+        key: PLT,
+        name: 플랫폼팀,
+        value: G-PLT,
+        sources: { key: incident/groups/org_cd, value: incident/groups/grp },
+      }
   - id: group.PAY
     kind: mapping
     owner: u1003
     confidence: confirmed
-    data: { concept: group, key: PAY, name: 결제팀, value: G-PAY }
+    data:
+      {
+        concept: group,
+        key: PAY,
+        name: 결제팀,
+        value: G-PAY,
+        sources: { key: incident/groups/org_cd, value: incident/groups/grp },
+      }
   - id: group.LIV
     kind: mapping
     owner: u1003
     confidence: confirmed
-    data: { concept: group, key: LIV, name: 라이브운영팀, value: G-LIV }
+    data:
+      {
+        concept: group,
+        key: LIV,
+        name: 라이브운영팀,
+        value: G-LIV,
+        sources: { key: incident/groups/org_cd, value: incident/groups/grp },
+      }
   - id: group.DAT
     kind: mapping
     owner: u1003
     confidence: confirmed
-    data: { concept: group, key: DAT, name: 데이터팀, value: G-DAT }
+    data:
+      {
+        concept: group,
+        key: DAT,
+        name: 데이터팀,
+        value: G-DAT,
+        sources: { key: incident/groups/org_cd, value: incident/groups/grp },
+      }

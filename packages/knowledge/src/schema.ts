@@ -1,4 +1,11 @@
-import type { ActionType, CatalogItem, Domain, JsonObject, KnowledgeEntry } from '@crewdesk/core'
+import type {
+  ActionType,
+  ApprovalLevel,
+  CatalogItem,
+  Domain,
+  JsonObject,
+  KnowledgeEntry,
+} from '@crewdesk/core'
 import { parse } from 'yaml'
 
 export type KnowledgeBase = { entries: KnowledgeEntry[] }
@@ -6,7 +13,7 @@ export type KnowledgeSource = { name: string; text: string }
 
 const kinds = ['entity', 'relation', 'mapping', 'rule']
 const confidences = ['confirmed', 'assumed']
-const domains = ['access', 'deploy', 'incident']
+const domains = ['access', 'deploy', 'incident', 'knowledge']
 const risks = ['low', 'medium', 'high']
 const levels = ['always', 'recommend', 'notify', 'auto']
 
@@ -88,13 +95,17 @@ export const actionTypesOf = (kb: KnowledgeBase): ActionType[] =>
       reversible: data.reversible,
       owner,
       approvalLevel: oneOf(data, 'approvalLevel', levels, id),
+      ...(data.maxLevel === undefined
+        ? {}
+        : { maxLevel: oneOf<ApprovalLevel>(data, 'maxLevel', levels, id) }),
       promoteAfter: data.promoteAfter,
       conditionFields: texts(data, 'conditionFields', id),
       ...(data.verify === undefined ? {} : { verify: verifyOf(data.verify, id) }),
     }
   })
 
-export const approverOf = (kb: KnowledgeBase, type: ActionType): string => {
+export const approverOf = (kb: KnowledgeBase, type: ActionType, params: JsonObject = {}): string => {
+  if (type.system === 'knowledge' && typeof params.owner === 'string') return params.owner
   const relation = kb.entries.find(
     (entry) =>
       entry.kind === 'relation' && entry.data.type === 'approves' && entry.data.actionType === type.id,

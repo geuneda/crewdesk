@@ -1,6 +1,7 @@
 import { type ApprovalRule, createApprovalDesk } from '@crewdesk/approval'
 import type {
   ApprovalRecord,
+  DiscrepancyReport,
   Domain,
   DomainAction,
   JsonObject,
@@ -10,11 +11,13 @@ import type {
   UsageRecord,
   UsageReport,
 } from '@crewdesk/core'
+import type { Question } from '@crewdesk/eval'
 import {
   actionTypesOf,
   approverOf,
   catalogOf,
   createKnowledgeService,
+  detectDiscrepancies,
   type KnowledgeBase,
 } from '@crewdesk/knowledge'
 import { createLedger, type Pricing, placeTask, type Route, routeModel } from '@crewdesk/ops'
@@ -33,7 +36,8 @@ import { createScriptedRuntime, defaultTokenModel, type TokenModel } from './dum
 import { createSqliteStore } from './dummies/store.ts'
 import { createMemorySystems, type Db } from './dummies/systems.ts'
 import { applyEvent, failureRateAt, type SimEvent } from './events.ts'
-import { DAY, HOUR, isWorkday, MINUTE } from './time.ts'
+import { createLearning } from './learning.ts'
+import { DAY, MINUTE } from './time.ts'
 import { generateWorkload } from './workload.ts'
 
 export type SimConfig = {
@@ -45,7 +49,10 @@ export type SimConfig = {
   failureRate: number
   events: SimEvent[]
   kb: KnowledgeBase
+  questions: Question[]
   knowledgeEnabled: boolean
+  batchEveryMs: number
+  staleAfterMs: number
   approvals: { enabled: boolean } & ApproverPolicy
   tokens: TokenModel
   seats: Seat[]
@@ -64,6 +71,11 @@ export type SimResult = {
   approvals: ApprovalRecord[]
   gates: JsonObject[]
   knowledgeUse: JsonObject[]
+  discrepancies: DiscrepancyReport[]
+  knowledgeProposals: JsonObject[]
+  knowledgeChanges: JsonObject[]
+  knowledgeRejections: JsonObject[]
+  kb: KnowledgeBase
   ruleChanges: JsonObject[]
   rules: ApprovalRule[]
   expected: Record<string, DomainAction>
@@ -78,7 +90,10 @@ export const defaultSimConfig = {
   latencyMs: { min: 2000, max: 20000 },
   failureRate: 0.01,
   events: [],
+  questions: [],
   knowledgeEnabled: true,
+  batchEveryMs: DAY,
+  staleAfterMs: 14 * DAY,
   approvals: { enabled: true, rejectRate: 0.02, adminRejectRate: 0.3, modifyRate: 0.03 },
   tokens: defaultTokenModel,
   seats: defaultSeats,
@@ -90,6 +105,8 @@ export const defaultSimConfig = {
 const domains: Domain[] = ['access', 'deploy', 'incident']
 
 export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
+  let kb = config.kb
+  let questions = config.questions
   const clock = createVirtualClock()
   const store = createSqliteStore()
   const channel = createMemoryChannel()
@@ -126,8 +143,8 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
   const approvals = createApprovalDesk({
     store,
     clock,
-    actionTypes: () => actionTypesOf(config.kb),
-    approverFor: (type) => approverOf(config.kb, type),
+    actionTypes: () => actionTypesOf(kb),
+    approverFor: (type, action) => approverOf(kb, type, action.params),
     roleOf: (uid) => (people.find((person) => person.uid === uid)?.lead ? 'lead' : 'member'),
     humanApproval: () => config.approvals.enabled,
     onPending: (pending) => void approve(pending).catch(onError),
@@ -142,7 +159,7 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
   })
 
   const knowledge = createKnowledgeService({
-    kb: () => config.kb,
+    kb: () => kb,
     store,
     clock,
     enabled: () => config.knowledgeEnabled,
@@ -180,7 +197,7 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       model,
       store,
       clock,
-      catalog: () => catalogOf(config.kb),
+      catalog: () => catalogOf(kb),
       models: { cheap: routeModel(config.routes, 'intake'), strong: config.intakeStrongModel },
       confidenceThreshold: 0.7,
       budget: { tokens: 200_000, turns: 12, subagents: 0 },
@@ -193,7 +210,17 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       clock,
       lookup: knowledge.lookup,
       recordUsage,
-      authorize: approvals.authorize,
+      authorize: (task, action, used) =>
+        approvals.authorize(
+          task,
+          action,
+          used.some((entry) => knowledge.isStale(entry.id, config.staleAfterMs)),
+        ),
+      onDomainError: async (task, error, used) => {
+        for (const report of detectDiscrepancies(used, error, task.id, clock.now())) {
+          await store.append('discrepancy', report)
+        }
+      },
       onExecuted: approvals.recordExecution,
       awaitDecision: approvals.awaitDecision,
       retryDelayMs: MINUTE,
@@ -205,9 +232,10 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       store,
       clock,
       systems,
-      actionTypes: () => actionTypesOf(config.kb),
+      actionTypes: () => actionTypesOf(kb),
       replyModel: routeModel(config.routes, 'close'),
       reportIncident: approvals.reportIncident,
+      markUsedOk: knowledge.markUsedOk,
       recordUsage,
     },
   })
@@ -226,15 +254,32 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       else applyEvent(systems, event)
     }
   }
-  const daily = async () => {
-    for (let day = 0; day < config.days; day += 1) {
-      await clock.sleep(day * DAY + 18 * HOUR - clock.now())
-      if (isWorkday(day)) approvals.proposePromotions()
+  const learning = createLearning({
+    systems,
+    store,
+    clock,
+    approvals,
+    recordUsage,
+    model: routeModel(config.routes, 'batch'),
+    onError,
+    kb: () => kb,
+    setKb: (next) => {
+      kb = next
+    },
+    questions: () => questions,
+    setQuestions: (next) => {
+      questions = next
+    },
+  })
+  const learn = async () => {
+    for (let at = config.batchEveryMs; at < config.days * DAY; at += config.batchEveryMs) {
+      await clock.sleep(at - clock.now())
+      await learning.run()
     }
   }
   void feed().catch(onError)
   void inject().catch(onError)
-  void daily().catch(onError)
+  void learn().catch(onError)
   await clock.runUntil(config.days * DAY)
   if (errors.length > 0) throw new AggregateError(errors, 'the simulation hit internal errors')
 
@@ -248,6 +293,11 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
     approvals: (await store.list('approval')) as ApprovalRecord[],
     gates: await store.list('gate'),
     knowledgeUse: await store.list('knowledgeUse'),
+    discrepancies: (await store.list('discrepancy')) as DiscrepancyReport[],
+    knowledgeProposals: await store.list('knowledgeProposal'),
+    knowledgeChanges: await store.list('knowledgeChange'),
+    knowledgeRejections: await store.list('knowledgeProposalRejected'),
+    kb,
     ruleChanges: await store.list('ruleChange'),
     rules: approvals.rules(),
     expected: Object.fromEntries(

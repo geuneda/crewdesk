@@ -49,7 +49,7 @@ export type ApprovalDeskDeps = {
   store: StorePort
   clock: ClockPort
   actionTypes(): ActionType[]
-  approverFor(type: ActionType): string
+  approverFor(type: ActionType, action: DomainAction): string
   roleOf(person: string): string
   humanApproval(): boolean
   onPending(pending: PendingApproval): void
@@ -139,7 +139,7 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
     rules: () => rules,
     pending: () => pending,
 
-    authorize: async (task: Task, action: DomainAction): Promise<Authorization> => {
+    authorize: async (task: Task, action: DomainAction, cautious = false): Promise<Authorization> => {
       const type = typeFor(task, action)
       if (!type) {
         return {
@@ -161,7 +161,7 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
         return { status: 'pending', approvalId: gate }
       }
       const conditionKey = conditionKeyOf(type, action.params)
-      const level = levelFor(type, action)
+      const level = cautious ? demoted(levelFor(type, action)) : levelFor(type, action)
       const human = needsHuman(level)
       const id = human ? `ap-${++seq}` : POLICY
       gateOfCall.set(task.id, new Map([...(gateOfCall.get(task.id) ?? []), [actionKey, id]]))
@@ -182,7 +182,7 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
         actionType: type.id,
         conditionKey,
         requesterRole: deps.roleOf(task.requester),
-        approver: deps.approverFor(type),
+        approver: deps.approverFor(type, action),
         level,
         requestedAt: deps.clock.now(),
       })
@@ -207,7 +207,10 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
         taskId: task.id,
       })
       if (level === 'notify') {
-        await deps.notify(deps.approverFor(type), `자동 실행: ${type.id} (${conditionKey}), 업무 ${task.id}`)
+        await deps.notify(
+          deps.approverFor(type, action),
+          `자동 실행: ${type.id} (${conditionKey}), 업무 ${task.id}`,
+        )
       }
     },
 

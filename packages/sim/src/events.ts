@@ -17,26 +17,31 @@ export type SimEvent =
   | { at: number; kind: 'seatDrain'; seat: string; units: number }
 
 const orgColumns = [
-  { system: 'iam', resource: 'accounts', field: 'org_cd' },
-  { system: 'deployer', resource: 'services', field: 'owner' },
-  { system: 'incident', resource: 'groups', field: 'org_cd' },
+  { system: 'iam', resource: 'accounts', field: 'org_cd', prefix: '' },
+  { system: 'deployer', resource: 'services', field: 'owner', prefix: '' },
+  { system: 'incident', resource: 'groups', field: 'org_cd', prefix: '' },
+  { system: 'incident', resource: 'groups', field: 'grp', prefix: 'G-' },
 ]
+
+const rename = (
+  systems: MemorySystems,
+  target: { system: string; resource: string; field: string },
+  from: string,
+  to: string,
+) =>
+  systems.mutate(target.system, 'codeChange', { ...target, from, to }, (db) =>
+    renameCode(db, target, from, to),
+  )
 
 export const applyEvent = (systems: MemorySystems, event: SimEvent): void => {
   if (event.kind === 'codeChange') {
-    const { at: _, kind, from, to, ...target } = event
-    systems.mutate(event.system, kind, { ...target, from, to }, (db) => renameCode(db, target, from, to))
+    const { system, resource, field, from, to } = event
+    rename(systems, { system, resource, field }, from, to)
   }
   if (event.kind === 'reorg') {
-    const { from, to } = event
-    systems.mutate('iam', 'reorg', { from, to }, (db) =>
-      renameCode(
-        orgColumns.reduce((next, column) => renameCode(next, column, from, to), db),
-        { system: 'incident', resource: 'groups', field: 'grp' },
-        `G-${from}`,
-        `G-${to}`,
-      ),
-    )
+    for (const { prefix, ...target } of orgColumns) {
+      rename(systems, target, prefix + event.from, prefix + event.to)
+    }
   }
 }
 

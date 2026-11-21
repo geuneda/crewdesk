@@ -6,44 +6,48 @@ entries:
     taskTypes: [access.grant]
     evidence: iam/role_codes 에서 sys=deployer, cd=DP
     lastVerifiedAt: "2026-11-01"
-    data: { concept: role, scope: deployer, aliases: [배포자], value: DP }
+    data:
+      { concept: role, scope: deployer, aliases: [배포자], value: DP, sources: { value: iam/role_codes/cd } }
   - id: role.deployer.reader
     kind: mapping
     owner: u1001
     confidence: confirmed
     taskTypes: [access.grant]
-    data: { concept: role, scope: deployer, aliases: [조회], value: RO }
+    data:
+      { concept: role, scope: deployer, aliases: [조회], value: RO, sources: { value: iam/role_codes/cd } }
   - id: role.incident.oncall
     kind: mapping
     owner: u1001
     confidence: confirmed
     taskTypes: [access.grant]
-    data: { concept: role, scope: incident, aliases: [온콜], value: OC }
+    data:
+      { concept: role, scope: incident, aliases: [온콜], value: OC, sources: { value: iam/role_codes/cd } }
   - id: role.incident.reader
     kind: mapping
     owner: u1001
     confidence: confirmed
     taskTypes: [access.grant]
-    data: { concept: role, scope: incident, aliases: [조회], value: RO }
+    data:
+      { concept: role, scope: incident, aliases: [조회], value: RO, sources: { value: iam/role_codes/cd } }
   - id: role.iam.admin
     kind: mapping
     owner: u1001
     confidence: assumed
     taskTypes: [access.grant]
     evidence: iam/role_codes 에 sys=iam 인 코드가 AD 하나뿐
-    data: { concept: role, scope: iam, aliases: [관리자], value: AD }
+    data: { concept: role, scope: iam, aliases: [관리자], value: AD, sources: { value: iam/role_codes/cd } }
   - id: env.prod
     kind: mapping
     owner: u1002
     confidence: confirmed
     taskTypes: [deploy.release]
-    data: { concept: env, aliases: [운영], value: P }
+    data: { concept: env, aliases: [운영], value: P, sources: { value: deployer/envs/cd } }
   - id: env.staging
     kind: mapping
     owner: u1002
     confidence: confirmed
     taskTypes: [deploy.release]
-    data: { concept: env, aliases: [스테이징], value: S }
+    data: { concept: env, aliases: [스테이징], value: S, sources: { value: deployer/envs/cd } }
   - id: rule.deploy.staging-first
     kind: rule
     owner: u1002
@@ -56,16 +60,16 @@ entries:
     owner: u1003
     confidence: confirmed
     taskTypes: [incident.open]
-    data: { concept: severity, aliases: [긴급], value: S1 }
+    data: { concept: severity, aliases: [긴급], value: S1, sources: { value: incident/severities/cd } }
   - id: severity.s2
     kind: mapping
     owner: u1003
     confidence: confirmed
     taskTypes: [incident.open]
-    data: { concept: severity, aliases: [높음], value: S2 }
+    data: { concept: severity, aliases: [높음], value: S2, sources: { value: incident/severities/cd } }
   - id: severity.s3
     kind: mapping
     owner: u1003
     confidence: confirmed
     taskTypes: [incident.open]
-    data: { concept: severity, aliases: [보통], value: S3 }
+    data: { concept: severity, aliases: [보통], value: S3, sources: { value: incident/severities/cd } }

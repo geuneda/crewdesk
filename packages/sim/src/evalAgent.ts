@@ -1,4 +1,4 @@
-import type { Task } from '@crewdesk/core'
+import type { ClockPort, Task } from '@crewdesk/core'
 import type { EvalAgent } from '@crewdesk/eval'
 import { catalogOf, type KnowledgeBase } from '@crewdesk/knowledge'
 import { executeTask } from '@crewdesk/runtime'
@@ -8,12 +8,13 @@ import { companyScript } from './company/scripts.ts'
 import { createVirtualClock } from './dummies/clock.ts'
 import { createSeededRandom } from './dummies/random.ts'
 import { createScriptedRuntime, defaultTokenModel } from './dummies/runtime.ts'
-import { createMemorySystems } from './dummies/systems.ts'
+import { createMemorySystems, type Db } from './dummies/systems.ts'
 
 export const createScriptedEvalAgent =
-  (kb: KnowledgeBase): EvalAgent =>
+  (kb: KnowledgeBase, db: Db = buildCompanyDb(), shared?: ClockPort): EvalAgent =>
   async (question, knowledge, model) => {
-    const clock = createVirtualClock()
+    const own = shared ? undefined : createVirtualClock()
+    const clock = shared ?? own ?? createVirtualClock()
     const item = catalogOf(kb).find((entry) => entry.taskType === question.taskType)
     if (!item) throw new Error(`question ${question.id} uses an unknown task type ${question.taskType}`)
     const task: Task = {
@@ -40,13 +41,14 @@ export const createScriptedEvalAgent =
           failureRate: () => 0,
           tokens: defaultTokenModel,
         }),
-        systems: createMemorySystems({ db: buildCompanyDb(), actions: companyActions, clock }),
+        systems: createMemorySystems({ db, actions: companyActions, clock }),
         clock,
         lookup: (query) => knowledge.lookup(query),
         recordUsage: async () => {},
         authorize: async () => ({ status: 'allow' }),
         awaitDecision: async () => {},
         onExecuted: async () => {},
+        onDomainError: async () => {},
         onPause: async () => {},
         onResume: async () => {},
         retryDelayMs: 0,
@@ -54,6 +56,6 @@ export const createScriptedEvalAgent =
       },
       { task, agent: `agent-${task.domain}`, model, knowledge: knowledge.fragment },
     )
-    await clock.runUntil(Number.POSITIVE_INFINITY)
+    await own?.runUntil(Number.POSITIVE_INFINITY)
     return { actions: (await pending).actions }
   }

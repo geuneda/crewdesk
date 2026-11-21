@@ -78,6 +78,7 @@ const setup = (wrap: (channel: ChannelPort) => ChannelPort = (channel) => channe
       authorize: async () => ({ status: 'allow' }),
       awaitDecision: async () => {},
       onExecuted: async () => {},
+      onDomainError: async () => {},
       retryDelayMs: 1,
       maxAttempts: 3,
     },
@@ -104,6 +105,7 @@ const setup = (wrap: (channel: ChannelPort) => ChannelPort = (channel) => channe
       replyModel: 'small',
       recordUsage: async () => {},
       reportIncident: async () => {},
+      markUsedOk: async () => {},
     },
   })
   const send = (id: string, body: string, mentionsAgent = true) =>

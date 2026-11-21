@@ -12,7 +12,10 @@ const order: ApprovalLevel[] = ['always', 'recommend', 'notify', 'auto']
 const rank = (level: ApprovalLevel) => order.indexOf(level)
 
 export const needsHuman = (level: ApprovalLevel): boolean => rank(level) < rank('notify')
-export const capOf = (type: ActionType): ApprovalLevel => (type.reversible ? 'auto' : 'recommend')
+export const capOf = (type: ActionType): ApprovalLevel => {
+  const natural: ApprovalLevel = type.reversible ? 'auto' : 'recommend'
+  return type.maxLevel && rank(type.maxLevel) < rank(natural) ? type.maxLevel : natural
+}
 export const promoted = (level: ApprovalLevel): ApprovalLevel => order[rank(level) + 1] ?? level
 export const demoted = (level: ApprovalLevel): ApprovalLevel => order[rank(level) - 1] ?? level
 
