@@ -333,21 +333,21 @@ test('a literal dotted key does not hide a conflict on the nested path of the sa
     (conflict) => conflict.path,
   )
   expect(new Set(shown).size).toBe(2)
-  const twoIds = (value: string) => ({
-    ...base,
-    kb: patchEntry(patchEntry(base.kb, 'env.prod', { value }), 'role.deployer.reader', {
-      prod: { value },
-    }),
-  })
+  const twoIds = (value: string) => {
+    const kb = patchEntry(base.kb, 'env.prod', { value })
+    const prod = kb.entries.find((entry) => entry.id === 'env.prod')
+    if (!prod) throw new Error('env.prod is missing')
+    return { ...base, kb: { entries: [...kb.entries, { ...prod, id: 'env', data: { prod: { value } } }] } }
+  }
   const idOverlay = {
     ...overlay,
-    knowledge: { 'env.prod': { value: 'o' }, 'role.deployer.reader': { prod: { value: 'o' } } },
+    knowledge: { 'env.prod': { value: 'o' }, env: { prod: { value: 'o' } } },
   }
   expect(
     planUpgrade(snapshotOf(twoIds('x')), snapshotOf(twoIds('y')), idOverlay).conflicts.map(
       (conflict) => conflict.path,
     ),
-  ).toEqual(['knowledge.["env.prod"].value', 'knowledge.["role.deployer.reader"].prod.value'])
+  ).toEqual(['knowledge.["env.prod"].value', 'knowledge.env.prod.value'])
 })
 
 test('a deployment directory takes one command at a time', async () => {
