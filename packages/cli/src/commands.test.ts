@@ -322,6 +322,15 @@ test('a literal dotted key does not hide a conflict on the nested path of the sa
       (conflict) => conflict.path,
     ),
   ).toEqual(['knowledge.env.prod.["a.b"]', 'knowledge.env.prod.a.b'])
+  const odd = (value: string) => ({
+    ...base,
+    kb: patchEntry(base.kb, 'env.prod', { 'a.b': value, '["a': { 'b"]': value } }),
+  })
+  const oddOverlay = { ...overlay, knowledge: { 'env.prod': { 'a.b': 1, '["a': { 'b"]': 2 } } } }
+  const shown = planUpgrade(snapshotOf(odd('x')), snapshotOf(odd('y')), oddOverlay).conflicts.map(
+    (conflict) => conflict.path,
+  )
+  expect(new Set(shown).size).toBe(2)
 })
 
 test('a deployment directory takes one command at a time', async () => {
