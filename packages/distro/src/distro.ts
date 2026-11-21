@@ -194,7 +194,7 @@ export const planUpgrade = (was: Snapshot, now: Snapshot, overlay: Overlay): Upg
               {
                 path: [leaf.root, ...leaf.path]
                   .map((segment, depth) =>
-                    depth > 1 && !/^[\w-]+$/.test(segment) ? `[${JSON.stringify(segment)}]` : segment,
+                    depth > 0 && !/^[\w-]+$/.test(segment) ? `[${JSON.stringify(segment)}]` : segment,
                   )
                   .join('.'),
                 overlay: leaf.value,

@@ -49,7 +49,7 @@ test('a conflict is an overridden value whose base value changed', async () => {
   expect(plan).toEqual({
     from: '1.0.0',
     to: '1.1.0',
-    conflicts: [{ path: 'knowledge.actionType.iam.grant.promoteAfter', overlay: 10, was: 5, now: 4 }],
+    conflicts: [{ path: 'knowledge.["actionType.iam.grant"].promoteAfter', overlay: 10, was: 5, now: 4 }],
   })
   expect(planUpgrade(snapshotOf(base), snapshotOf(next), await overlayOf('live')).conflicts).toEqual([])
   const removed = {
@@ -74,7 +74,7 @@ test('report 5: per organisation the upgrade is applied, or stopped by a conflic
   expect((await checkUpgrade(base, broken, await overlayOf('data'))).status).toBe('evalFailed')
   const report = renderUpgradeReport('1.0.0', '1.1.0', outcomes)
   expect(report).toContain('| payments | 충돌로 중단 | 1 |')
-  expect(report).toContain('| payments | knowledge.actionType.iam.grant.promoteAfter | 10 | 5 | 4 |')
+  expect(report).toContain('| payments | knowledge.["actionType.iam.grant"].promoteAfter | 10 | 5 | 4 |')
 })
 
 test('init, deploy, then an upgrade that stops on a conflict and passes once it is resolved', async () => {
@@ -95,7 +95,7 @@ test('init, deploy, then an upgrade that stops on a conflict and passes once it 
   const stopped = await upgrade({ dir, base: next })
   expect(stopped.code).toBe(1)
   expect(stopped.lines.join('\n')).toContain(
-    'knowledge.actionType.iam.grant.promoteAfter: overlay 10, base 5 -> 4',
+    'knowledge.["actionType.iam.grant"].promoteAfter: overlay 10, base 5 -> 4',
   )
   expect(JSON.parse(await readFile(join(dir, 'base.lock.json'), 'utf8')).version).toBe('1.0.0')
 
@@ -197,7 +197,7 @@ test('a nested overlay patch keeps the sibling fields and conflicts at the same 
   }
   expect(
     planUpgrade(snapshotOf(base), snapshotOf(moved), overlay).conflicts.map((conflict) => conflict.path),
-  ).toEqual(['knowledge.role.deployer.reader.sources.value'])
+  ).toEqual(['knowledge.["role.deployer.reader"].sources.value'])
 })
 
 test('an upgrade is checked with the old questions, so dropping a failing question hides nothing', async () => {
@@ -295,10 +295,12 @@ test('a patch that replaces a whole scalar or list conflicts when that base valu
   const plan = (data: object) =>
     planUpgrade(snapshotOf(withOption('legacy')), snapshotOf(withOption('strict')), overlay(data)).conflicts
   expect(plan({ options: { enabled: true } })).toEqual([
-    { path: 'knowledge.env.prod.options', overlay: { enabled: true }, was: 'legacy', now: 'strict' },
+    { path: 'knowledge.["env.prod"].options', overlay: { enabled: true }, was: 'legacy', now: 'strict' },
   ])
-  expect(plan({ options: {} }).map((conflict) => conflict.path)).toEqual(['knowledge.env.prod.options'])
-  expect(plan({ aliases: ['prod'] }).map((conflict) => conflict.path)).toEqual(['knowledge.env.prod.aliases'])
+  expect(plan({ options: {} }).map((conflict) => conflict.path)).toEqual(['knowledge.["env.prod"].options'])
+  expect(plan({ aliases: ['prod'] }).map((conflict) => conflict.path)).toEqual([
+    'knowledge.["env.prod"].aliases',
+  ])
   expect(plan({ sources: {} })).toEqual([])
   expect(plan({ value: 'P' })).toEqual([])
 })
@@ -312,7 +314,7 @@ test('a literal dotted key does not hide a conflict on the nested path of the sa
     knowledge: { 'env.prod': { 'a.b': 1, a: { b: 2 } } },
   }
   const { conflicts } = planUpgrade(snapshotOf(withA('x')), snapshotOf(withA('y')), overlay)
-  expect(conflicts).toEqual([{ path: 'knowledge.env.prod.a.b', overlay: 2, was: 'x', now: 'y' }])
+  expect(conflicts).toEqual([{ path: 'knowledge.["env.prod"].a.b', overlay: 2, was: 'x', now: 'y' }])
   const both = (value: string) => ({
     ...base,
     kb: patchEntry(base.kb, 'env.prod', { a: { b: value }, 'a.b': value }),
@@ -321,7 +323,7 @@ test('a literal dotted key does not hide a conflict on the nested path of the sa
     planUpgrade(snapshotOf(both('x')), snapshotOf(both('y')), overlay).conflicts.map(
       (conflict) => conflict.path,
     ),
-  ).toEqual(['knowledge.env.prod.["a.b"]', 'knowledge.env.prod.a.b'])
+  ).toEqual(['knowledge.["env.prod"].["a.b"]', 'knowledge.["env.prod"].a.b'])
   const odd = (value: string) => ({
     ...base,
     kb: patchEntry(base.kb, 'env.prod', { 'a.b': value, '["a': { 'b"]': value } }),
@@ -331,6 +333,21 @@ test('a literal dotted key does not hide a conflict on the nested path of the sa
     (conflict) => conflict.path,
   )
   expect(new Set(shown).size).toBe(2)
+  const twoIds = (value: string) => ({
+    ...base,
+    kb: patchEntry(patchEntry(base.kb, 'env.prod', { value }), 'role.deployer.reader', {
+      prod: { value },
+    }),
+  })
+  const idOverlay = {
+    ...overlay,
+    knowledge: { 'env.prod': { value: 'o' }, 'role.deployer.reader': { prod: { value: 'o' } } },
+  }
+  expect(
+    planUpgrade(snapshotOf(twoIds('x')), snapshotOf(twoIds('y')), idOverlay).conflicts.map(
+      (conflict) => conflict.path,
+    ),
+  ).toEqual(['knowledge.["env.prod"].value', 'knowledge.["role.deployer.reader"].prod.value'])
 })
 
 test('a deployment directory takes one command at a time', async () => {
