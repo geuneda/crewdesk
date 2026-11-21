@@ -50,12 +50,12 @@ export const stalenessTimeline = (
       record.field === field &&
       record.from === expected &&
       within(record.proposedAt)
-    const proposal = proposals.find(same)
     const fix = changes.find(same)
+    const proposal = proposals.filter(same).find((candidate) => !fix || candidate.to === fix.to)
     return {
       entryId,
       field,
-      change: `${String(expected)} -> ${to}`,
+      change: `${String(expected)} -> ${String(fix?.to ?? to)}`,
       staleAt: origin.staleAt,
       detectedAt: first.report.reportedAt,
       detectedBy: first.report.source,

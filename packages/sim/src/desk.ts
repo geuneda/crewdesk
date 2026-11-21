@@ -13,6 +13,7 @@ export type DeskDeps = {
   workModel(task: Task): string
   place(task: Task): Placement
   onPlaced(task: Task, seat: string): void
+  resumeAt(task: Task): number | null
   onFinished(task: Task): void
   onError(error: unknown): void
 }
@@ -75,10 +76,10 @@ export const createDesk = (deps: DeskDeps) => {
           onResume: async (resumed) => {
             while (exclusive.has(resumed.id)) {
               await acquire(resumed)
-              const placement = deps.place(resumed)
-              if (placement.kind !== 'wait') break
+              const until = deps.resumeAt(resumed)
+              if (until === null) break
               release(resumed)
-              await deps.intake.clock.sleep(placement.until - deps.intake.clock.now())
+              await deps.intake.clock.sleep(until - deps.intake.clock.now())
             }
             await setStatus(resumed, 'running')
           },

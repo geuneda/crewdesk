@@ -99,15 +99,20 @@ export const createClaudeRuntime = (options: ClaudeRuntimeOptions): RuntimePort 
   }
 
   const consumed = (session: Session) =>
-    new Promise<void>((resolve) => {
-      session.idle = [...session.idle, resolve]
-      session.wake?.()
-    })
+    session.cancelled
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => {
+          session.idle = [...session.idle, resolve]
+          session.wake?.()
+        })
 
   const stopped: ToolResult = { status: 'error', code: 'RUN_CANCELLED', message: 'the run was stopped' }
 
   const invoke = async (session: Session, first: ToolHost, name: string, input: JsonObject) => {
     const call: ToolCall = { callId: `${session.request.task.id}-call-${++session.calls}`, tool: name, input }
+    if (session.cancelled) {
+      return { content: [{ type: 'text' as const, text: JSON.stringify(outputOf(stopped)) }], isError: true }
+    }
     push(session, { type: 'toolCall', ...call })
     await consumed(session)
     let tools = first

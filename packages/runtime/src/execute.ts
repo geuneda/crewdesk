@@ -26,6 +26,7 @@ export type ExecutionDeps = {
   recordUsage(report: UsageReport): Promise<void>
   authorize(task: Task, action: DomainAction, used: KnowledgeEntry[]): Promise<Authorization>
   onDomainError(task: Task, error: DomainError, used: KnowledgeEntry[]): Promise<void>
+  identifyingParams(action: DomainAction): string[]
   awaitDecision(approvalId: string): Promise<void>
   onExecuted(task: Task, action: DomainAction, ok: boolean): Promise<void>
   onPause(task: Task): Promise<void>
@@ -77,9 +78,13 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
   let actions: ExecutedAction[] = []
   let lookedUp: KnowledgeEntry[] = []
   let applied: string[] = []
+  const inFlight = new Map<string, Promise<ToolResult>>()
   const used = () => [...input.knowledge, ...lookedUp]
   const carriedBy = (action: DomainAction) => {
-    const values = Object.values(action.params)
+    const values = deps.identifyingParams(action).flatMap((name) => {
+      const value = action.params[name]
+      return value === undefined ? [] : [value]
+    })
     return used().filter(
       (entry) =>
         entry.data.value !== undefined &&
@@ -119,15 +124,27 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
         const key = canonicalJson(request)
         const prior = actions.find((done) => done.result.ok && canonicalJson(done.action) === key)
         if (prior) return toToolResult(prior.result)
-        const permit = await deps.authorize(task, request, carriedBy(request))
-        if (permit.status === 'pending') return { status: 'approvalRequired', approvalId: permit.approvalId }
-        if (permit.status === 'denied') return { status: 'error', code: permit.code, message: permit.message }
-        const result = await deps.systems.execute(request)
-        actions = [...actions, { action: request, result }]
-        if (result.ok) applied = [...applied, ...carriedBy(request).map((entry) => entry.id)]
-        await deps.onExecuted(task, request, result.ok)
-        if (!result.ok) await deps.onDomainError(task, result.error, used())
-        return toToolResult(result)
+        const running = inFlight.get(key)
+        if (running) return running
+        const attempt = (async (): Promise<ToolResult> => {
+          const permit = await deps.authorize(task, request, carriedBy(request))
+          if (permit.status === 'pending')
+            return { status: 'approvalRequired', approvalId: permit.approvalId }
+          if (permit.status === 'denied')
+            return { status: 'error', code: permit.code, message: permit.message }
+          const result = await deps.systems.execute(request)
+          actions = [...actions, { action: request, result }]
+          if (result.ok) applied = [...applied, ...carriedBy(request).map((entry) => entry.id)]
+          await deps.onExecuted(task, request, result.ok)
+          if (!result.ok) await deps.onDomainError(task, result.error, used())
+          return toToolResult(result)
+        })()
+        inFlight.set(key, attempt)
+        try {
+          return await attempt
+        } finally {
+          inFlight.delete(key)
+        }
       }
       return { status: 'error', code: 'UNKNOWN_TOOL', message: tool }
     },

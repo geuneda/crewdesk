@@ -15,6 +15,7 @@ const setup = (
   wrap: (channel: ChannelPort) => ChannelPort = (channel) => channel,
   place: (now: number) => Placement = () => ({ kind: 'run', seat: 'seat-deploy', exclusive: true }),
   approvalMs = 0,
+  resumeAt: (now: number) => number | null = () => null,
 ) => {
   let approved = false
   const clock = createVirtualClock()
@@ -45,6 +46,7 @@ const setup = (
     workModel: () => 'medium',
     place: () => place(clock.now()),
     onPlaced: () => {},
+    resumeAt: () => resumeAt(clock.now()),
     onFinished: () => {},
     onError: (error) => void errors.push(error),
     intake: {
@@ -89,6 +91,7 @@ const setup = (
       },
       onExecuted: async () => {},
       onDomainError: async () => {},
+      identifyingParams: (action) => Object.keys(action.params),
       retryDelayMs: 1,
       maxAttempts: 3,
     },
@@ -202,14 +205,15 @@ test('a task that waited for the seat is placed again when it gets the seat', as
   expect(Number(trace?.closedAt)).toBeGreaterThanOrEqual(60_000)
 })
 
-test('a task resumed after approval waits when its seat ran out in the meantime', async () => {
+test('a task resumed after approval waits for its own seat, whatever a new task would get', async () => {
   const { clock, store, send } = setup(
     undefined,
     (now) =>
-      now >= 5_000 && now < 60_000
-        ? { kind: 'wait', until: 60_000 }
-        : { kind: 'run', seat: 'seat-deploy', exclusive: true },
+      now < 5_000
+        ? { kind: 'run', seat: 'seat-deploy', exclusive: true }
+        : { kind: 'run', seat: 'seat-overflow', exclusive: false },
     10_000,
+    (now) => (now < 60_000 ? 60_000 : null),
   )
   void send('m1', 'pay-api 배포')
   await clock.runUntil(30_000)

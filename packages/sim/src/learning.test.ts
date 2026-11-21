@@ -252,4 +252,7 @@ test('a second source change while the first fix waits for approval still ends a
   })
   expect(moved.kb.entries.find((entry) => entry.id === 'approves.iam.grant')?.data.approver).toBe('u1009')
   expect(moved.knowledgeChanges).toEqual([expect.objectContaining({ from: 'u1001', to: 'u1009' })])
+  const [incident] = stalenessTimeline(moved.discrepancies, moved.knowledgeProposals, moved.knowledgeChanges)
+  expect(incident).toMatchObject({ change: 'u1001 -> u1009' })
+  expect(incident?.proposedAt).toBeGreaterThan(again.at)
 })

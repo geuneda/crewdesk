@@ -197,6 +197,10 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
       return placement
     },
     onPlaced: (task, seat) => ledger.assign(task.id, seat),
+    resumeAt: (task) => {
+      const seat = ledger.assigned(task.id)
+      return seat && ledger.left(seat) <= 0 ? ledger.resetAt(seat) : null
+    },
     onFinished: (task) => {
       ledger.unassign(task.id)
       approvals.forget(task.id)
@@ -226,6 +230,12 @@ export const runSimulation = async (config: SimConfig): Promise<SimResult> => {
           action,
           carried.some((entry) => knowledge.isStale(entry.id, config.staleAfterMs)),
         ),
+      identifyingParams: (action) => {
+        const type = actionTypesOf(kb).find(
+          (candidate) => candidate.system === action.system && candidate.action === action.action,
+        )
+        return [...new Set([...(type?.conditionFields ?? []), ...(type?.verify?.match ?? [])])]
+      },
       onDomainError: async (task, error, used) => {
         for (const report of detectDiscrepancies(used, error, task.id, clock.now())) {
           await store.append('discrepancy', report)

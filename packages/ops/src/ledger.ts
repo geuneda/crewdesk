@@ -47,6 +47,7 @@ export const createLedger = (deps: LedgerDeps) => {
       seatById(seatId)
       seatOfTask.set(taskId, seatId)
     },
+    assigned: (taskId: string): string | undefined => seatOfTask.get(taskId),
     unassign: (taskId: string): void => {
       seatOfTask.delete(taskId)
     },

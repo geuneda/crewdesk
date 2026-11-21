@@ -287,6 +287,7 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
       if (!type) return Promise.resolve()
       const conditionKey = conditionKeyOf(type, action.params)
       breakStreak(type.id, conditionKey)
+      markRuleDecided(type.id, conditionKey)
       return demote(type.id, conditionKey, 'incident')
     },
 

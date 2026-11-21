@@ -148,7 +148,7 @@ export const replayKnowledgeEffect = async (
   if (short.length > 0) {
     throw new Error(`the recordings lack ${file.runs} complete run(s) for: ${short.join(', ')}`)
   }
-  const runtime = createReplayRuntime(file.recordings, conditionKey)
+  const runtime = createReplayRuntime(file.recordings.filter(complete), conditionKey)
   const still = { now: () => 0, sleep: async () => {} }
   return measureKnowledgeEffect({
     kb: distro.kb,

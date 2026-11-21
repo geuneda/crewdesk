@@ -225,10 +225,13 @@ test('an upgrade whose outputs cannot be written keeps the old lock and can be r
   const dir = join(await temp(), 'live')
   await init({ dir, org: 'live', base: baseDistroDir })
   const next = await nextBaseDir((yaml) => yaml.replace('tokens: 200000', 'tokens: 250000'))
-  await mkdir(join(dir, 'resolved.json'))
-  await expect(upgrade({ dir, base: next })).rejects.toThrow()
-  expect(JSON.parse(await readFile(join(dir, 'base.lock.json'), 'utf8')).version).toBe('1.0.0')
-  await rm(join(dir, 'resolved.json'), { recursive: true })
+  for (const blocked of ['resolved.json.tmp', 'overlay.yaml.tmp', 'base.lock.json.tmp']) {
+    await mkdir(join(dir, blocked))
+    await expect(upgrade({ dir, base: next })).rejects.toThrow()
+    expect(JSON.parse(await readFile(join(dir, 'base.lock.json'), 'utf8')).version).toBe('1.0.0')
+    expect(await readFile(join(dir, 'overlay.yaml'), 'utf8')).toContain('org:')
+    await rm(join(dir, blocked), { recursive: true })
+  }
   expect((await upgrade({ dir, base: next })).code).toBe(0)
   expect(JSON.parse(await readFile(join(dir, 'resolved.json'), 'utf8')).version).toBe('1.1.0')
 })
@@ -265,3 +268,25 @@ test('recordings that are incomplete or made for another distro are refused', as
     /other questions, knowledge, or prompt/,
   )
 }, 60_000)
+
+test('a patch that replaces a whole scalar or list conflicts when that base value changed', () => {
+  const withOption = (value: string) => ({
+    ...base,
+    kb: patchEntry(base.kb, 'env.prod', { options: value, aliases: ['운영', value] }),
+  })
+  const overlay = (data: object) => ({
+    org: 'x',
+    baseVersion: '1.0.0',
+    settings: {},
+    knowledge: { 'env.prod': data as never },
+  })
+  const plan = (data: object) =>
+    planUpgrade(snapshotOf(withOption('legacy')), snapshotOf(withOption('strict')), overlay(data)).conflicts
+  expect(plan({ options: { enabled: true } })).toEqual([
+    { path: 'knowledge.env.prod.options', overlay: { enabled: true }, was: 'legacy', now: 'strict' },
+  ])
+  expect(plan({ options: {} }).map((conflict) => conflict.path)).toEqual(['knowledge.env.prod.options'])
+  expect(plan({ aliases: ['prod'] }).map((conflict) => conflict.path)).toEqual(['knowledge.env.prod.aliases'])
+  expect(plan({ sources: {} })).toEqual([])
+  expect(plan({ value: 'P' })).toEqual([])
+})

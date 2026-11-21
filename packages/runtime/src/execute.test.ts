@@ -46,6 +46,7 @@ const depsFor = (runtime: RuntimePort) => {
     awaitDecision: async () => {},
     onExecuted: async () => {},
     onDomainError: async () => {},
+    identifyingParams: (action) => Object.keys(action.params),
     onPause: async () => {},
     onResume: async () => {},
     retryDelayMs: 1,
@@ -248,4 +249,59 @@ test('only knowledge whose value an executed action carried counts as applied', 
   expect(carried).toEqual([['reader']])
   expect(result.knowledgeUsed).toEqual(['reader', 'other-reader', 'admin'])
   expect(result.knowledgeApplied).toEqual(['reader'])
+})
+
+test('the same action requested twice at once runs once', async () => {
+  const outcomes: unknown[] = []
+  const { deps, executed } = depsFor(
+    runtimeOf(async function* (_, tools) {
+      outcomes.push(...(await Promise.all([tools.call(grant), tools.call({ ...grant, callId: 'c2' })])))
+      yield { type: 'done', ok: true, result: {} }
+    }),
+  )
+  const result = await executeTask(
+    {
+      ...deps,
+      authorize: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        return { status: 'allow' }
+      },
+    },
+    input,
+  )
+  expect(executed).toHaveLength(1)
+  expect(result.actions).toHaveLength(1)
+  expect(outcomes).toEqual([
+    expect.objectContaining({ status: 'ok' }),
+    expect.objectContaining({ status: 'ok' }),
+  ])
+})
+
+test('a parameter the action type does not name cannot mark other knowledge as used', async () => {
+  const entry = (id: string, scope: string) => ({
+    id,
+    kind: 'mapping' as const,
+    owner: 'u1',
+    confidence: 'confirmed' as const,
+    taskTypes: [],
+    data: { value: 'RO', scope },
+  })
+  const { deps } = depsFor(
+    runtimeOf(async function* (_, tools) {
+      await tools.call({
+        ...grant,
+        input: {
+          system: 'iam',
+          action: 'grant',
+          params: { sys: 'incident', role_cd: 'RO', note: 'deployer' },
+        },
+      })
+      yield { type: 'done', ok: true, result: {} }
+    }),
+  )
+  const result = await executeTask(
+    { ...deps, identifyingParams: () => ['sys', 'role_cd'] },
+    { ...input, knowledge: [entry('incident-reader', 'incident'), entry('deployer-reader', 'deployer')] },
+  )
+  expect(result.knowledgeApplied).toEqual(['incident-reader'])
 })

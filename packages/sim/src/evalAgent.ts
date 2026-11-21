@@ -59,6 +59,7 @@ export const createEvalAgent =
         awaitDecision: async () => {},
         onExecuted: async () => {},
         onDomainError: async () => {},
+        identifyingParams: (action) => Object.keys(action.params),
         onPause: async () => {},
         onResume: async () => {},
         retryDelayMs: 0,
@@ -68,5 +69,9 @@ export const createEvalAgent =
     )
     await own?.runUntil(Number.POSITIVE_INFINITY)
     const execution = await pending
-    return { actions: execution.actions, result: execution.result }
+    return {
+      actions: execution.actions,
+      result: execution.result,
+      ...(execution.reason ? { reason: execution.reason } : {}),
+    }
   }

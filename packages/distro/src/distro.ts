@@ -137,7 +137,7 @@ export const knowledgeHash = (kb: KnowledgeBase): string =>
   hashOf(kb.entries.map((entry) => [entry.id, entryHash(entry)]))
 
 const leaves = (value: Json, path: string[]): { path: string[]; value: Json }[] =>
-  isObject(value)
+  isObject(value) && Object.keys(value).length > 0
     ? Object.entries(value).flatMap(([key, child]) => leaves(child, [...path, key]))
     : [{ path, value }]
 
@@ -161,20 +161,42 @@ export const planUpgrade = (was: Snapshot, now: Snapshot, overlay: Overlay): Upg
   return {
     from: was.version,
     to: now.version,
-    conflicts: overridden.flatMap((leaf) => {
-      const old = at(before[leaf.root], leaf.path)
-      const next = at(after[leaf.root], leaf.path)
-      const same = old !== undefined && next !== undefined && canonicalJson(old) === canonicalJson(next)
-      return same || (old === undefined && next === undefined)
-        ? []
-        : [
-            {
-              path: [leaf.root, ...leaf.path].join('.'),
-              overlay: leaf.value,
-              was: old ?? null,
-              now: next ?? null,
-            },
-          ]
-    }),
+    conflicts: overridden
+      .map((leaf) => {
+        const replaced = leaf.path.findIndex((_, depth) => {
+          const prefix = leaf.path.slice(0, depth + 1)
+          return [at(before[leaf.root], prefix), at(after[leaf.root], prefix)].some(
+            (value) => value !== undefined && !isObject(value),
+          )
+        })
+        const path = replaced < 0 ? leaf.path : leaf.path.slice(0, replaced + 1)
+        return { ...leaf, path, value: at(overlay[leaf.root] as Json, path) ?? leaf.value }
+      })
+      .filter(
+        (leaf, index, all) =>
+          all.findIndex(
+            (other) => other.root === leaf.root && other.path.join('.') === leaf.path.join('.'),
+          ) === index,
+      )
+      .flatMap((leaf) => {
+        const old = at(before[leaf.root], leaf.path)
+        const next = at(after[leaf.root], leaf.path)
+        const keepsBase =
+          isObject(leaf.value) &&
+          Object.keys(leaf.value).length === 0 &&
+          [old, next].every((value) => value === undefined || isObject(value))
+        if (keepsBase) return []
+        const same = old !== undefined && next !== undefined && canonicalJson(old) === canonicalJson(next)
+        return same || (old === undefined && next === undefined)
+          ? []
+          : [
+              {
+                path: [leaf.root, ...leaf.path].join('.'),
+                overlay: leaf.value,
+                was: old ?? null,
+                now: next ?? null,
+              },
+            ]
+      }),
   }
 }

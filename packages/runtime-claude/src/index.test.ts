@@ -179,3 +179,31 @@ test('when the consumer stops at the budget, a tool call the agent makes afterwa
   expect(hostCalls).toBe(0)
   expect(toolOutcome).toMatchObject({ isError: true })
 })
+
+test('a tool call that arrives after the run was stopped returns at once and is not executed', async () => {
+  let hostCalls = 0
+  let late: Promise<{ isError?: boolean } | undefined> | undefined
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const slow: RunAgent = async function* ({ options }) {
+    yield assistant('msg-1', '')
+    await held
+    late = handlersOf(options).domain_execute?.({ system: 'iam', action: 'grant', params: {} })
+    yield result({ subtype: 'success', is_error: false, result: '', total_cost_usd: 0, num_turns: 1 })
+  }
+  const stream = runtimeWith(slow).start(request, {
+    call: async () => {
+      hostCalls += 1
+      return { status: 'ok', output: {} }
+    },
+  })
+  for await (const event of stream) {
+    if (event.type === 'usage') break
+  }
+  release()
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(await late).toMatchObject({ isError: true })
+  expect(hostCalls).toBe(0)
+})

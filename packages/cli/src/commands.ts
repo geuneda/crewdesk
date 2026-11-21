@@ -1,4 +1,4 @@
-import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   applyOverlay,
@@ -52,6 +52,11 @@ const exists = (path: string) =>
     () => false,
   )
 
+const replaceFile = async (path: string, body: string) => {
+  await writeFile(`${path}.tmp`, body)
+  await rename(`${path}.tmp`, path)
+}
+
 const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
 
 const readOverlay = async (dir: string): Promise<Overlay> =>
@@ -62,7 +67,7 @@ const readLock = async (dir: string): Promise<Snapshot> =>
 
 const writeResolved = async (dir: string, base: Distro, overlay: Overlay) => {
   const merged = applyOverlay(base, overlay)
-  await writeFile(
+  await replaceFile(
     files(dir).resolved,
     json({
       name: merged.name,
@@ -74,7 +79,7 @@ const writeResolved = async (dir: string, base: Distro, overlay: Overlay) => {
       knowledge: merged.kb.entries,
     }),
   )
-  await writeFile(files(dir).wiki, renderWiki(merged.kb))
+  await replaceFile(files(dir).wiki, renderWiki(merged.kb))
   return merged
 }
 
@@ -150,8 +155,8 @@ export const upgrade = async (options: { dir: string; base: string }): Promise<O
   const document = parseDocument(await readFile(paths.overlay, 'utf8'))
   document.set('baseVersion', next.version)
   await writeResolved(options.dir, next, { ...overlay, baseVersion: next.version })
-  await writeFile(paths.overlay, document.toString())
-  await writeFile(paths.lock, json(snapshotOf(next)))
+  await replaceFile(paths.overlay, document.toString())
+  await replaceFile(paths.lock, json(snapshotOf(next)))
   return {
     code: 0,
     lines: [

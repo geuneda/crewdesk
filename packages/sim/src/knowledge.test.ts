@@ -69,3 +69,15 @@ test('measuring refuses an empty run', async () => {
     }),
   ).rejects.toThrow(/at least one/)
 })
+
+test('a recording that no longer replays stops the report instead of counting as an answer', async () => {
+  const clock = { now: () => 0, sleep: async () => {} }
+  const replay = createReplayRuntime([], keyOf)
+  await expect(
+    measureKnowledgeEffect({
+      ...base,
+      clock,
+      agentFor: (kb, recordUsage) => createEvalAgent({ kb, clock, runtime: replay, recordUsage }),
+    }),
+  ).rejects.toThrow(/q.access.deployer \(without knowledge\) does not replay/)
+})
