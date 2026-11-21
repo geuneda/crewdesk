@@ -1,0 +1,393 @@
+{
+  "seed": 1,
+  "days": 30,
+  "summary": {
+    "messages": 926,
+    "requests": 637,
+    "tasks": 637,
+    "done": 598,
+    "escalated": 38,
+    "awaitingApproval": 1,
+    "correct": 598,
+    "reasons": {
+      "OK": 598,
+      "AGENT_REPORTED_FAILURE": 38
+    },
+    "tokens": 25837453
+  },
+  "knowledge": [
+    {
+      "condition": "without",
+      "runs": 21,
+      "accuracy": 0.19,
+      "usdPerRun": 0.0448,
+      "tokensPerRun": 4750,
+      "turnsPerRun": 4,
+      "secondsPerRun": 0
+    },
+    {
+      "condition": "with",
+      "runs": 21,
+      "accuracy": 1,
+      "usdPerRun": 0.0378,
+      "tokensPerRun": 4615,
+      "turnsPerRun": 3.5,
+      "secondsPerRun": 0
+    }
+  ],
+  "approval": [
+    {
+      "day": 0,
+      "actions": 28,
+      "requested": 28,
+      "ratio": 1,
+      "medianWaitMinutes": 127.9
+    },
+    {
+      "day": 1,
+      "actions": 37,
+      "requested": 37,
+      "ratio": 1,
+      "medianWaitMinutes": 113.6
+    },
+    {
+      "day": 2,
+      "actions": 31,
+      "requested": 31,
+      "ratio": 1,
+      "medianWaitMinutes": 106.9
+    },
+    {
+      "day": 3,
+      "actions": 28,
+      "requested": 24,
+      "ratio": 0.86,
+      "medianWaitMinutes": 21.3
+    },
+    {
+      "day": 4,
+      "actions": 28,
+      "requested": 21,
+      "ratio": 0.75,
+      "medianWaitMinutes": 9.7
+    },
+    {
+      "day": 7,
+      "actions": 35,
+      "requested": 34,
+      "ratio": 0.97,
+      "medianWaitMinutes": 12.7
+    },
+    {
+      "day": 8,
+      "actions": 38,
+      "requested": 29,
+      "ratio": 0.76,
+      "medianWaitMinutes": 14.3
+    },
+    {
+      "day": 9,
+      "actions": 37,
+      "requested": 18,
+      "ratio": 0.49,
+      "medianWaitMinutes": 19.2
+    },
+    {
+      "day": 10,
+      "actions": 33,
+      "requested": 15,
+      "ratio": 0.45,
+      "medianWaitMinutes": 58.7
+    },
+    {
+      "day": 11,
+      "actions": 39,
+      "requested": 20,
+      "ratio": 0.51,
+      "medianWaitMinutes": 14.4
+    },
+    {
+      "day": 12,
+      "actions": 1,
+      "requested": 1,
+      "ratio": 1,
+      "medianWaitMinutes": 3420
+    },
+    {
+      "day": 14,
+      "actions": 31,
+      "requested": 6,
+      "ratio": 0.19,
+      "medianWaitMinutes": 12.5
+    },
+    {
+      "day": 15,
+      "actions": 31,
+      "requested": 13,
+      "ratio": 0.42,
+      "medianWaitMinutes": 7
+    },
+    {
+      "day": 16,
+      "actions": 36,
+      "requested": 18,
+      "ratio": 0.5,
+      "medianWaitMinutes": 15.3
+    },
+    {
+      "day": 17,
+      "actions": 33,
+      "requested": 18,
+      "ratio": 0.55,
+      "medianWaitMinutes": 11.9
+    },
+    {
+      "day": 18,
+      "actions": 31,
+      "requested": 10,
+      "ratio": 0.32,
+      "medianWaitMinutes": 10.5
+    },
+    {
+      "day": 21,
+      "actions": 31,
+      "requested": 18,
+      "ratio": 0.58,
+      "medianWaitMinutes": 13.2
+    },
+    {
+      "day": 22,
+      "actions": 31,
+      "requested": 14,
+      "ratio": 0.45,
+      "medianWaitMinutes": 7.1
+    },
+    {
+      "day": 23,
+      "actions": 36,
+      "requested": 18,
+      "ratio": 0.5,
+      "medianWaitMinutes": 10.4
+    },
+    {
+      "day": 24,
+      "actions": 24,
+      "requested": 11,
+      "ratio": 0.46,
+      "medianWaitMinutes": 11.1
+    },
+    {
+      "day": 25,
+      "actions": 29,
+      "requested": 15,
+      "ratio": 0.52,
+      "medianWaitMinutes": 7.9
+    },
+    {
+      "day": 28,
+      "actions": 36,
+      "requested": 9,
+      "ratio": 0.25,
+      "medianWaitMinutes": 9.3
+    },
+    {
+      "day": 29,
+      "actions": 30,
+      "requested": 8,
+      "ratio": 0.27,
+      "medianWaitMinutes": 14.2
+    }
+  ],
+  "staleness": [
+    {
+      "entryId": "role.deployer.deployer",
+      "field": "value",
+      "change": "DP -> DV",
+      "staleAt": 208800000,
+      "detectedAt": 211438653.74671283,
+      "detectedBy": "runtime",
+      "runtimeReports": 3,
+      "proposedAt": 259200000,
+      "fixedAt": 291600000,
+      "rejected": false
+    },
+    {
+      "entryId": "group.PAY",
+      "field": "key",
+      "change": "PAY -> FIN",
+      "staleAt": 730800000,
+      "detectedAt": 777600000,
+      "detectedBy": "systemEvent",
+      "runtimeReports": 0,
+      "proposedAt": 777600000,
+      "fixedAt": null,
+      "rejected": true
+    },
+    {
+      "entryId": "group.PAY",
+      "field": "value",
+      "change": "G-PAY -> G-FIN",
+      "staleAt": 730800000,
+      "detectedAt": 777600000,
+      "detectedBy": "systemEvent",
+      "runtimeReports": 0,
+      "proposedAt": 777600000,
+      "fixedAt": 810000000,
+      "rejected": false
+    },
+    {
+      "entryId": "approves.iam.grant",
+      "field": "approver",
+      "change": "u1001 -> u1005",
+      "staleAt": 982800000,
+      "detectedAt": 1036800000,
+      "detectedBy": "systemEvent",
+      "runtimeReports": 0,
+      "proposedAt": 1036800000,
+      "fixedAt": 1242000000,
+      "rejected": false
+    }
+  ],
+  "cost": [
+    {
+      "name": "기준: 모든 단계 최상위 모델, 캐싱 없음, 도구 결과 누적",
+      "tasks": 223,
+      "usdPerTask": 1.0156,
+      "intakeUsdPerTask": 0.0036,
+      "workUsdPerTask": 1.0112,
+      "closeUsdPerTask": 0.0007,
+      "tokensPerTask": 62717
+    },
+    {
+      "name": "+ 단계·위험도별 모델 라우팅",
+      "tasks": 223,
+      "usdPerTask": 0.3975,
+      "intakeUsdPerTask": 0.0005,
+      "workUsdPerTask": 0.397,
+      "closeUsdPerTask": 0,
+      "tokensPerTask": 62765
+    },
+    {
+      "name": "+ 프롬프트 캐싱",
+      "tasks": 223,
+      "usdPerTask": 0.2006,
+      "intakeUsdPerTask": 0.0005,
+      "workUsdPerTask": 0.2,
+      "closeUsdPerTask": 0,
+      "tokensPerTask": 62765
+    },
+    {
+      "name": "+ Code Mode 방식 도구",
+      "tasks": 223,
+      "usdPerTask": 0.1355,
+      "intakeUsdPerTask": 0.0005,
+      "workUsdPerTask": 0.1349,
+      "closeUsdPerTask": 0,
+      "tokensPerTask": 38507
+    }
+  ],
+  "upgrades": [
+    {
+      "org": "data",
+      "conflicts": [],
+      "questionsAdded": [],
+      "questionsRemoved": [],
+      "status": "applied",
+      "accuracyBefore": 1,
+      "accuracyAfter": 1
+    },
+    {
+      "org": "live",
+      "conflicts": [],
+      "questionsAdded": [],
+      "questionsRemoved": [],
+      "status": "applied",
+      "accuracyBefore": 1,
+      "accuracyAfter": 1
+    },
+    {
+      "org": "payments",
+      "conflicts": [
+        {
+          "path": "knowledge.[\"actionType.iam.grant\"].promoteAfter",
+          "overlay": 10,
+          "was": 5,
+          "now": 4
+        }
+      ],
+      "questionsAdded": [],
+      "questionsRemoved": [],
+      "status": "conflict",
+      "accuracyBefore": null,
+      "accuracyAfter": null
+    }
+  ],
+  "breakEven": [
+    {
+      "requestsPerDay": 20,
+      "meteredTasks": 309,
+      "tasks": 309,
+      "meteredUsd": 40.17,
+      "seatUsd": 300.19,
+      "seatFeesUsd": 300,
+      "overflowUsd": 0,
+      "parkedTasks": 0,
+      "cheaper": "metered"
+    },
+    {
+      "requestsPerDay": 40,
+      "meteredTasks": 635,
+      "tasks": 635,
+      "meteredUsd": 88.03,
+      "seatUsd": 300.37,
+      "seatFeesUsd": 300,
+      "overflowUsd": 0,
+      "parkedTasks": 0,
+      "cheaper": "metered"
+    },
+    {
+      "requestsPerDay": 80,
+      "meteredTasks": 1179,
+      "tasks": 1179,
+      "meteredUsd": 156.14,
+      "seatUsd": 300.7,
+      "seatFeesUsd": 300,
+      "overflowUsd": 0,
+      "parkedTasks": 0,
+      "cheaper": "metered"
+    },
+    {
+      "requestsPerDay": 160,
+      "meteredTasks": 2504,
+      "tasks": 2506,
+      "meteredUsd": 330.15,
+      "seatUsd": 301.48,
+      "seatFeesUsd": 300,
+      "overflowUsd": 0,
+      "parkedTasks": 0,
+      "cheaper": "seat"
+    },
+    {
+      "requestsPerDay": 320,
+      "meteredTasks": 4765,
+      "tasks": 4759,
+      "meteredUsd": 636.54,
+      "seatUsd": 302.8,
+      "seatFeesUsd": 300,
+      "overflowUsd": 0,
+      "parkedTasks": 0,
+      "cheaper": "seat"
+    },
+    {
+      "requestsPerDay": 640,
+      "meteredTasks": 9783,
+      "tasks": 8995,
+      "meteredUsd": 1299.78,
+      "seatUsd": 305.76,
+      "seatFeesUsd": 300,
+      "overflowUsd": 0,
+      "parkedTasks": 3169,
+      "cheaper": "incomparable"
+    }
+  ]
+}
