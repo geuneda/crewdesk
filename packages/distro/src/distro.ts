@@ -175,7 +175,8 @@ export const planUpgrade = (was: Snapshot, now: Snapshot, overlay: Overlay): Upg
       .filter(
         (leaf, index, all) =>
           all.findIndex(
-            (other) => other.root === leaf.root && other.path.join('.') === leaf.path.join('.'),
+            (other) =>
+              JSON.stringify([other.root, ...other.path]) === JSON.stringify([leaf.root, ...leaf.path]),
           ) === index,
       )
       .flatMap((leaf) => {

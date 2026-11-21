@@ -51,7 +51,7 @@ export const stalenessTimeline = (
       record.from === expected &&
       within(record.proposedAt)
     const fix = changes.find(same)
-    const proposal = proposals.filter(same).find((candidate) => !fix || candidate.to === fix.to)
+    const proposal = fix ?? proposals.find(same)
     return {
       entryId,
       field,

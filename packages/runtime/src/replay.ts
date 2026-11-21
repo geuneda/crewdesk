@@ -101,7 +101,7 @@ export const createReplayRuntime = (recordings: Recording[], keyOf: KeyOf): Runt
       const takes = recordings.filter((recording) => recording.key === key)
       const turn = played.get(key) ?? 0
       played.set(key, turn + 1)
-      const take = takes[turn % Math.max(takes.length, 1)]
+      const take = takes[turn]
       return play(take ? take.events : fail('NO_RECORDING', key), tools, request.budget.turns)
     },
     resume: (resumeToken, tools) => {

@@ -255,4 +255,11 @@ test('a second source change while the first fix waits for approval still ends a
   const [incident] = stalenessTimeline(moved.discrepancies, moved.knowledgeProposals, moved.knowledgeChanges)
   expect(incident).toMatchObject({ change: 'u1001 -> u1009' })
   expect(incident?.proposedAt).toBeGreaterThan(again.at)
+  const dropped = { ...moved.knowledgeChanges[0], proposedAt: again.at + 1 }
+  const [withDropped] = stalenessTimeline(
+    moved.discrepancies,
+    [dropped, ...moved.knowledgeProposals],
+    moved.knowledgeChanges,
+  )
+  expect(withDropped?.proposedAt).toBe(incident?.proposedAt)
 })

@@ -207,3 +207,24 @@ test('a tool call that arrives after the run was stopped returns at once and is 
   expect(await late).toMatchObject({ isError: true })
   expect(hostCalls).toBe(0)
 })
+
+test('a tool call that arrives after the run ended returns at once', async () => {
+  let handlers: ReturnType<typeof handlersOf> = {}
+  const quick: RunAgent = async function* ({ options }) {
+    handlers = handlersOf(options)
+    yield result({ subtype: 'success', is_error: false, result: '', total_cost_usd: 0, num_turns: 1 })
+  }
+  let hostCalls = 0
+  const stream = runtimeWith(quick).start(request, {
+    call: async () => {
+      hostCalls += 1
+      return { status: 'ok', output: {} }
+    },
+  })
+  for await (const _ of stream) {
+  }
+  const late = handlers.domain_execute?.({ system: 'iam', action: 'grant', params: {} })
+  const hung = new Promise((resolve) => setTimeout(() => resolve('hung'), 50))
+  expect(await Promise.race([late, hung])).toMatchObject({ isError: true })
+  expect(hostCalls).toBe(0)
+})

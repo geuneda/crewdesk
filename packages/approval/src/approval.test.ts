@@ -272,9 +272,9 @@ test('a modified approval or a rejected rule proposal restarts the streak', () =
     decidedAt,
     level: 'always',
   })
-  expect(proposePromotions([grant], [], [record(1), record(2, true), record(3)], () => -1)).toEqual([])
+  expect(proposePromotions([grant], [], [record(1), record(2, true), record(3)], () => 0)).toEqual([])
   expect(proposePromotions([grant], [], [record(1), record(2), record(3)], () => 2)).toEqual([])
-  expect(proposePromotions([grant], [], [record(1, true), record(2), record(3)], () => -1)).toHaveLength(1)
+  expect(proposePromotions([grant], [], [record(1, true), record(2), record(3)], () => 0)).toHaveLength(1)
 })
 
 test('a promotion approved while a demotion is being saved does not override it', async () => {
@@ -371,5 +371,13 @@ test('approvals from before an incident do not count toward a later promotion', 
   await run('a3')
   expect(desk.proposePromotions()).toEqual([])
   await run('a4')
+  expect(desk.proposePromotions()).toHaveLength(1)
+})
+
+test('approvals after an incident count even when the clock has not moved', async () => {
+  const { desk, run } = setup()
+  await desk.reportIncident(action)
+  await run('a1')
+  await run('a2')
   expect(desk.proposePromotions()).toHaveLength(1)
 })

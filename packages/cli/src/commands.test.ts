@@ -263,7 +263,13 @@ test('recordings that are incomplete or made for another distro are refused', as
   }
   await expect(
     simWith({ ...file, recordings: file.recordings.filter((item) => !item.key.endsWith('|without')) }),
-  ).rejects.toThrow(/lack 1 complete run\(s\) for: eval-q.access.deployer\|without/)
+  ).rejects.toThrow(/lack complete runs for: eval-q.access.deployer\|without/)
+  await expect(
+    simWith({
+      ...file,
+      recordings: file.recordings.map((item) => (item.run === 1 ? { ...item, run: 0 } : item)),
+    }),
+  ).rejects.toThrow(/lack complete runs for/)
   await expect(simWith({ ...file, inputHash: 'other' })).rejects.toThrow(
     /other questions, knowledge, or prompt/,
   )
@@ -289,4 +295,26 @@ test('a patch that replaces a whole scalar or list conflicts when that base valu
   expect(plan({ aliases: ['prod'] }).map((conflict) => conflict.path)).toEqual(['knowledge.env.prod.aliases'])
   expect(plan({ sources: {} })).toEqual([])
   expect(plan({ value: 'P' })).toEqual([])
+})
+
+test('a literal dotted key does not hide a conflict on the nested path of the same name', () => {
+  const withA = (value: string) => ({ ...base, kb: patchEntry(base.kb, 'env.prod', { a: { b: value } }) })
+  const overlay = {
+    org: 'x',
+    baseVersion: '1.0.0',
+    settings: {},
+    knowledge: { 'env.prod': { 'a.b': 1, a: { b: 2 } } },
+  }
+  const { conflicts } = planUpgrade(snapshotOf(withA('x')), snapshotOf(withA('y')), overlay)
+  expect(conflicts).toEqual([{ path: 'knowledge.env.prod.a.b', overlay: 2, was: 'x', now: 'y' }])
+})
+
+test('a deployment directory takes one command at a time', async () => {
+  const dir = join(await temp(), 'busy')
+  await init({ dir, org: 'busy', base: baseDistroDir })
+  await mkdir(join(dir, '.crewdesk.lock'))
+  await expect(deploy({ dir, base: baseDistroDir })).rejects.toThrow(/another crewdesk command is running/)
+  await rm(join(dir, '.crewdesk.lock'), { recursive: true })
+  expect((await deploy({ dir, base: baseDistroDir })).code).toBe(0)
+  expect((await deploy({ dir, base: baseDistroDir })).code).toBe(0)
 })

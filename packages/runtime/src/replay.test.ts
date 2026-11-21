@@ -77,7 +77,7 @@ test('a replay runs its tool calls against the live host and stops when the outc
   expect(same.at(-1)).toEqual(events.at(-1))
 })
 
-test('several takes of one key are replayed in turn, and a missing key is an error', async () => {
+test('several takes of one key are replayed in turn, and running out of takes is an error', async () => {
   const first = (await record('t1')).saved
   const takes = [
     ...first,
@@ -87,8 +87,8 @@ test('several takes of one key are replayed in turn, and a missing key is an err
   const lasts = [
     (await collect(runtime.start(request('t1'), ok))).at(-1),
     (await collect(runtime.start(request('t1'), ok))).at(-1),
-    (await collect(runtime.start(request('t1'), ok))).at(-1),
   ]
-  expect(lasts.map((event) => event?.type === 'done' && event.ok)).toEqual([true, false, true])
+  expect(lasts.map((event) => event?.type === 'done' && event.ok)).toEqual([true, false])
+  expect((await collect(runtime.start(request('t1'), ok))).at(-1)).toMatchObject({ code: 'NO_RECORDING' })
   expect((await collect(runtime.start(request('other'), ok))).at(-1)).toMatchObject({ code: 'NO_RECORDING' })
 })

@@ -1,4 +1,4 @@
-import { access, mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { access, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   applyOverlay,
@@ -57,6 +57,20 @@ const replaceFile = async (path: string, body: string) => {
   await rename(`${path}.tmp`, path)
 }
 
+const withLock = async <T>(dir: string, work: () => Promise<T>): Promise<T> => {
+  const lock = join(dir, '.crewdesk.lock')
+  await mkdir(lock).catch((error: NodeJS.ErrnoException) => {
+    throw error.code === 'EEXIST'
+      ? new Error(`another crewdesk command is running in ${dir}; remove ${lock} if it is not`)
+      : error
+  })
+  try {
+    return await work()
+  } finally {
+    await rm(lock, { recursive: true })
+  }
+}
+
 const json = (value: unknown) => `${JSON.stringify(value, null, 2)}\n`
 
 const readOverlay = async (dir: string): Promise<Overlay> =>
@@ -96,7 +110,7 @@ export const init = async (options: { dir: string; org: string; base: string }):
   return { code: 0, lines: [`initialised ${options.org} on ${base.name} ${base.version}`] }
 }
 
-export const deploy = async (options: { dir: string; base: string }): Promise<Outcome> => {
+const deployLocked = async (options: { dir: string; base: string }): Promise<Outcome> => {
   const base = await loadDistro(options.base)
   const lock = await readLock(options.dir)
   if (lock.version !== base.version) {
@@ -113,7 +127,7 @@ export const deploy = async (options: { dir: string; base: string }): Promise<Ou
   }
 }
 
-export const upgrade = async (options: { dir: string; base: string }): Promise<Outcome> => {
+const upgradeLocked = async (options: { dir: string; base: string }): Promise<Outcome> => {
   const paths = files(options.dir)
   const next = await loadDistro(options.base)
   const lock = await readLock(options.dir)
@@ -165,6 +179,12 @@ export const upgrade = async (options: { dir: string; base: string }): Promise<O
     ],
   }
 }
+
+export const deploy = (options: { dir: string; base: string }): Promise<Outcome> =>
+  withLock(options.dir, () => deployLocked(options))
+
+export const upgrade = (options: { dir: string; base: string }): Promise<Outcome> =>
+  withLock(options.dir, () => upgradeLocked(options))
 
 export const evaluate = async (options: { base: string; cache?: string }): Promise<Outcome> => {
   const distro = await loadDistro(options.base)

@@ -20,8 +20,10 @@ export type RecordingFile = {
   runs: number
   recordedAt: string
   inputHash: string
-  recordings: Recording[]
+  recordings: RunRecording[]
 }
+
+type RunRecording = Recording & { run: number }
 
 const promptOf = (distro: Distro): string => {
   if (!distro.prompts.work) throw new Error('the distro has no prompts/work.md')
@@ -57,18 +59,17 @@ export const record = async (options: {
       ],
     }
   }
-  let recordings: Recording[] = []
-  const runtime = recordRuntime(
-    createClaudeRuntime({
-      systemPrompt: promptOf(distro),
-      models: realModels,
-      ...(options.run ? { run: options.run } : {}),
-    }),
-    conditionKey,
-    (recording) => {
-      recordings = [...recordings, recording]
-    },
-  )
+  let recordings: RunRecording[] = []
+  let started = 0
+  const claude = createClaudeRuntime({
+    systemPrompt: promptOf(distro),
+    models: realModels,
+    ...(options.run ? { run: options.run } : {}),
+  })
+  const recorderFor = (run: number) =>
+    recordRuntime(claude, conditionKey, (recording) => {
+      recordings = [...recordings, { ...recording, run }]
+    })
   const rows = await measureKnowledgeEffect({
     kb: distro.kb,
     questions: distro.questions,
@@ -76,7 +77,8 @@ export const record = async (options: {
     model: options.model,
     clock: systemClock,
     pricing: {},
-    agentFor: (kb, recordUsage) => createEvalAgent({ kb, clock: systemClock, runtime, recordUsage }),
+    agentFor: (kb, recordUsage) =>
+      createEvalAgent({ kb, clock: systemClock, runtime: recorderFor(started++), recordUsage }),
   })
   const file: RecordingFile = {
     model,
@@ -94,7 +96,7 @@ export const record = async (options: {
   return {
     code: 0,
     lines: [
-      `recorded ${recordings.length} runs on ${model}`,
+      `recorded ${started} runs on ${model}`,
       `wrote ${join(options.out, 'recordings.json')}`,
       `wrote ${join(options.out, 'report-1-knowledge.md')}`,
     ],
@@ -116,7 +118,11 @@ export const readRecordings = async (path: string): Promise<RecordingFile> => {
     typeof file.inputHash !== 'string' ||
     !Array.isArray(file.recordings) ||
     !file.recordings.every(
-      (item) => typeof item?.key === 'string' && Array.isArray(item.events) && item.events.every(isEvent),
+      (item) =>
+        typeof item?.key === 'string' &&
+        typeof item.run === 'number' &&
+        Array.isArray(item.events) &&
+        item.events.every(isEvent),
     )
   ) {
     throw new Error(`${path} is not a recordings file`)
@@ -138,17 +144,20 @@ export const replayKnowledgeEffect = async (
     const last = recording.events.at(-1)
     return last?.type === 'done' || last?.type === 'error'
   }
-  const short = distro.questions.flatMap((question) =>
-    ['with', 'without']
-      .map((condition) => `eval-${question.id}|${condition}`)
-      .filter(
-        (key) => file.recordings.filter((item) => item.key === key && complete(item)).length < file.runs,
-      ),
+  const expected = ['without', 'with'].flatMap((condition) =>
+    distro.questions.flatMap((question) =>
+      Array.from({ length: file.runs }, () => `eval-${question.id}|${condition}`),
+    ),
   )
+  const takesOf = (run: number) => file.recordings.filter((item) => item.run === run)
+  const short = expected.filter((key, run) => {
+    const takes = takesOf(run)
+    return takes.length === 0 || !takes.every((take) => take.key === key && complete(take))
+  })
   if (short.length > 0) {
-    throw new Error(`the recordings lack ${file.runs} complete run(s) for: ${short.join(', ')}`)
+    throw new Error(`the recordings lack complete runs for: ${[...new Set(short)].join(', ')}`)
   }
-  const runtime = createReplayRuntime(file.recordings.filter(complete), conditionKey)
+  let replayed = 0
   const still = { now: () => 0, sleep: async () => {} }
   return measureKnowledgeEffect({
     kb: distro.kb,
@@ -157,6 +166,12 @@ export const replayKnowledgeEffect = async (
     model: file.model,
     clock: still,
     pricing: fakePricing,
-    agentFor: (kb, recordUsage) => createEvalAgent({ kb, clock: still, runtime, recordUsage }),
+    agentFor: (kb, recordUsage) =>
+      createEvalAgent({
+        kb,
+        clock: still,
+        runtime: createReplayRuntime(takesOf(replayed++), conditionKey),
+        recordUsage,
+      }),
   })
 }

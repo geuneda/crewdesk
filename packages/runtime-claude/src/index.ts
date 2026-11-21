@@ -69,7 +69,7 @@ export const createClaudeRuntime = (options: ClaudeRuntimeOptions): RuntimePort 
   }
 
   async function* stream(session: Session): AsyncGenerator<RuntimeEvent> {
-    let settled = false
+    let paused = false
     try {
       for (;;) {
         const [event, ...rest] = session.events
@@ -84,13 +84,13 @@ export const createClaudeRuntime = (options: ClaudeRuntimeOptions): RuntimePort 
           continue
         }
         session.events = rest
-        settled = event.type === 'done' || event.type === 'error' || event.type === 'approvalRequired'
+        paused = event.type === 'approvalRequired'
         yield event
-        if (settled) return
-        settled = false
+        if (paused || event.type === 'done' || event.type === 'error') return
+        paused = false
       }
     } finally {
-      if (!settled) {
+      if (!paused) {
         session.cancelled = true
         session.abort.abort()
         for (const release of session.idle) release()

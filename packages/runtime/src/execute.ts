@@ -122,10 +122,10 @@ export const executeTask = async (deps: ExecutionDeps, input: ExecutionInput): P
           return invalid(tool)
         const request: DomainAction = { system, action, params: params as JsonObject }
         const key = canonicalJson(request)
-        const prior = actions.find((done) => done.result.ok && canonicalJson(done.action) === key)
-        if (prior) return toToolResult(prior.result)
         const running = inFlight.get(key)
         if (running) return running
+        const prior = actions.find((done) => done.result.ok && canonicalJson(done.action) === key)
+        if (prior) return toToolResult(prior.result)
         const attempt = (async (): Promise<ToolResult> => {
           const permit = await deps.authorize(task, request, carriedBy(request))
           if (permit.status === 'pending')

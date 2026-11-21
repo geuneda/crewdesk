@@ -305,3 +305,35 @@ test('a parameter the action type does not name cannot mark other knowledge as u
   )
   expect(result.knowledgeApplied).toEqual(['incident-reader'])
 })
+
+test('a repeat that arrives while the first is still being recorded shares its outcome', async () => {
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const pause = () => new Promise((resolve) => setTimeout(resolve, 5))
+  let outcomes: PromiseSettledResult<unknown>[] = []
+  const { deps, executed } = depsFor(
+    runtimeOf(async function* (_, tools) {
+      const first = tools.call(grant)
+      await pause()
+      const second = tools.call({ ...grant, callId: 'c2' })
+      await pause()
+      release()
+      outcomes = await Promise.allSettled([first, second])
+      yield { type: 'done', ok: true, result: {} }
+    }),
+  )
+  await executeTask(
+    {
+      ...deps,
+      onExecuted: async () => {
+        await held
+        throw new Error('store down')
+      },
+    },
+    input,
+  ).catch(() => {})
+  expect(executed).toHaveLength(1)
+  expect(outcomes.map((outcome) => outcome.status)).toEqual(['rejected', 'rejected'])
+})

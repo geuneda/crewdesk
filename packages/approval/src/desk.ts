@@ -95,7 +95,7 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
   }
 
   const markRuleDecided = (actionType: string, conditionKey: string) => {
-    ruleDecidedAt = { ...ruleDecidedAt, [ruleKey(actionType, conditionKey)]: deps.clock.now() }
+    ruleDecidedAt = { ...ruleDecidedAt, [ruleKey(actionType, conditionKey)]: records.length }
   }
 
   const setRule = async (rule: ApprovalRule, from: ApprovalLevel, cause: string) => {
@@ -297,7 +297,7 @@ export const createApprovalDesk = (deps: ApprovalDeskDeps) => {
         deps.actionTypes(),
         rules,
         records,
-        (actionType, conditionKey) => ruleDecidedAt[ruleKey(actionType, conditionKey)] ?? -1,
+        (actionType, conditionKey) => ruleDecidedAt[ruleKey(actionType, conditionKey)] ?? 0,
       ).filter(
         (proposal) =>
           !openProposals.some(
